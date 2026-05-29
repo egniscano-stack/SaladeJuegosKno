@@ -31,16 +31,17 @@ const BingoAppContent: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
     if (roomParam) {
-      const success = joinGame(roomParam);
-      if (success) {
-        setRole('player');
-      }
+      joinGame(roomParam).then(success => {
+        if (success) {
+          setRole('player');
+        }
+      });
     }
   }, [joinGame, setRole]);
 
-  const handleHostClick = () => {
+  const handleHostClick = async () => {
     if (hostUser) {
-      createGame();
+      await createGame();
       setRole('host');
       setHostAuthMode('none');
     } else {
@@ -321,11 +322,11 @@ const BingoAppContent: React.FC = () => {
 
             {authError && <div style={{ color: '#ef4444', fontSize: '0.8rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', padding: '0.5rem', borderRadius: '4px', textAlign: 'center' }}>{authError}</div>}
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
-              const res = hostLogin(authUsername, authPassword);
+              const res = await hostLogin(authUsername, authPassword);
               if (res.success) {
-                createGame();
+                await createGame();
                 setRole('host');
                 setHostAuthMode('none');
               } else {
@@ -373,11 +374,11 @@ const BingoAppContent: React.FC = () => {
 
             {authError && <div style={{ color: '#ef4444', fontSize: '0.8rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', padding: '0.5rem', borderRadius: '4px', textAlign: 'center' }}>{authError}</div>}
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
-              const res = hostRegister(authUsername, authPassword);
+              const res = await hostRegister(authUsername, authPassword);
               if (res.success) {
-                createGame();
+                await createGame();
                 setRole('host');
                 setHostAuthMode('none');
               } else {

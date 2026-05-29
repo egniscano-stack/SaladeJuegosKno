@@ -850,8 +850,8 @@ export const HostView: React.FC = () => {
             </div>
             <button 
               className="btn-secondary" 
-              onClick={() => {
-                const newCode = regenerateRoom();
+              onClick={async () => {
+                const newCode = await regenerateRoom();
                 alert(`Nueva sala generada con éxito: ${newCode}`);
               }}
               style={{

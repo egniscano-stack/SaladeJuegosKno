@@ -100,13 +100,13 @@ interface BingoContextType {
   hostLogout: () => Promise<void>;
   
   // Actions
-  createGame: () => string;
-  joinGame: (id: string) => boolean;
+  createGame: () => Promise<string>;
+  joinGame: (id: string) => Promise<boolean>;
   leaveGame: () => void;
-  drawNumber: (specificNum?: number) => number | null;
+  drawNumber: (specificNum?: number) => Promise<number | null>;
   resetGame: () => void;
-  regenerateRoom: () => string;
-  sendChatMessage: (text: string, senderName?: string) => void;
+  regenerateRoom: () => Promise<string>;
+  sendChatMessage: (text: string, senderName?: string) => Promise<void>;
   buyCards: (quantity: number, playerName: string, paymentReceipt?: string) => string; // Returns transaction ID
   approveTransaction: (id: string) => void;
   rejectTransaction: (id: string, reason: string) => void;
@@ -367,6 +367,64 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     speakText(textToSpeak);
   }, [voiceEnabled]);
 
+  // Supabase Realtime Subscriptions (Phase 3)
+  useEffect(() => {
+    if (!gameId) return;
+
+    const channel = supabase.channel(`room-${gameId}`)
+      // Listen to room updates (e.g. drawn_numbers, game_status, configs)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${gameId}` }, (payload) => {
+        const data = payload.new as any;
+        if (roleRef.current === 'player') {
+          if (data.drawn_numbers) {
+            setDrawnNumbers(prev => {
+              // Only announce if a NEW number was added
+              if (data.drawn_numbers.length > prev.length) {
+                const newNum = data.drawn_numbers[data.drawn_numbers.length - 1];
+                announceNumber(newNum);
+                setLastDrawn(newNum);
+              }
+              return data.drawn_numbers;
+            });
+          }
+          if (data.game_status) setGameStatus(data.game_status);
+        }
+      })
+      // Listen to new chat messages
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${gameId}` }, (payload) => {
+        const msg = payload.new as any;
+        const newMsg: ChatMessage = {
+          id: msg.id,
+          sender: msg.sender,
+          text: msg.text,
+          timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isHost: msg.is_host
+        };
+        setChatMessages(prev => {
+          if (prev.some(m => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
+      })
+      // Listen to fast broadcast events (like drawing a number instantly before DB syncs)
+      .on('broadcast', { event: 'draw-number' }, (payload) => {
+        if (roleRef.current === 'player') {
+          const num = payload.payload.number;
+          setDrawnNumbers(prev => {
+            if (prev.includes(num)) return prev;
+            announceNumber(num);
+            return [...prev, num];
+          });
+          setLastDrawn(num);
+          setGameStatus('active');
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [gameId, announceNumber]);
+
   // Sync state between tabs/windows in same computer
   useEffect(() => {
     const handleSyncMessage = (event: MessageEvent) => {
@@ -567,16 +625,39 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [gameId, gameConfig.gameName]);
 
   // Authenticated host user actions
-  const hostRegister = useCallback((user: string, pass: string) => {
+  const hostRegister = useCallback(async (user: string, pass: string) => {
     try {
       const username = user.trim().toLowerCase();
       if (!username || !pass.trim()) {
         return { success: false, error: 'Por favor completa todos los campos.' };
       }
-      const hosts = JSON.parse(localStorage.getItem('bingo_kno_hosts') || '{}');
-      if (hosts[username]) {
-        return { success: false, error: 'El nombre de usuario ya existe.' };
+
+      // Convert username to a dummy email for Supabase Auth
+      const email = `${username}@bingokno.local`;
+      
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: pass,
+      });
+
+      if (error) {
+        if (error.message.includes('already registered')) {
+          return { success: false, error: 'El nombre de usuario ya existe.' };
+        }
+        return { success: false, error: error.message };
       }
+
+      if (data.user) {
+        // Insert into profile table
+        const { error: profileError } = await supabase
+          .from('host_profiles')
+          .insert({ id: data.user.id, username });
+          
+        if (profileError) {
+           console.error('Error creating profile:', profileError);
+        }
+      }
+
       const initialConfig: GameConfig = {
         gameName: 'Mi Gran Bingo',
         cardPrice: 2,
@@ -588,8 +669,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         startDate: '',
         startTime: ''
       };
-      hosts[username] = { password: pass, config: initialConfig };
-      localStorage.setItem('bingo_kno_hosts', JSON.stringify(hosts));
+
       setHostUser(username);
       setGameConfigState(initialConfig);
       return { success: true };
@@ -598,32 +678,58 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
-  const hostLogin = useCallback((user: string, pass: string) => {
+  const hostLogin = useCallback(async (user: string, pass: string) => {
     try {
       const username = user.trim().toLowerCase();
-      const hosts = JSON.parse(localStorage.getItem('bingo_kno_hosts') || '{}');
-      if (!hosts[username] || hosts[username].password !== pass) {
+      const email = `${username}@bingokno.local`;
+      
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: pass,
+      });
+
+      if (error) {
         return { success: false, error: 'Usuario o contraseña incorrectos.' };
       }
+      
       setHostUser(username);
-      if (hosts[username].config) {
-        setGameConfigState(hosts[username].config);
-        bc.postMessage({ type: 'update-config', config: hosts[username].config });
-      }
+      
+      // We'll load config when they join/create a room, for now use default
       return { success: true };
     } catch (e) {
       return { success: false, error: 'Error al iniciar sesión.' };
     }
   }, []);
 
-  const hostLogout = useCallback(() => {
+  const hostLogout = useCallback(async () => {
+    await supabase.auth.signOut();
     setHostUser(null);
     setRole('select');
     setGameId('');
   }, []);
 
-  const createGame = useCallback(() => {
+  const createGame = useCallback(async () => {
     const newId = `BINGO-${Math.floor(1000 + Math.random() * 9000)}`;
+    
+    // Insert new room in Supabase
+    const { error } = await supabase.from('rooms').insert({
+      id: newId,
+      host_id: (await supabase.auth.getUser()).data.user?.id,
+      game_name: gameConfigRef.current.gameName,
+      card_price: gameConfigRef.current.cardPrice,
+      payment_details: gameConfigRef.current.paymentDetails,
+      winning_mechanic: gameConfigRef.current.winningMechanic,
+      payout_amount: gameConfigRef.current.payoutAmount,
+      start_date: gameConfigRef.current.startDate,
+      start_time: gameConfigRef.current.startTime,
+      game_status: 'idle',
+      drawn_numbers: []
+    });
+    
+    if (error) {
+      console.error('Error creating room in Supabase:', error);
+    }
+    
     setGameId(newId);
     setGameStatus('idle');
     setDrawnNumbers([]);
@@ -634,8 +740,25 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return newId;
   }, []);
 
-  const regenerateRoom = useCallback(() => {
+  const regenerateRoom = useCallback(async () => {
     const newId = `BINGO-${Math.floor(1000 + Math.random() * 9000)}`;
+    
+    const { error } = await supabase.from('rooms').insert({
+      id: newId,
+      host_id: (await supabase.auth.getUser()).data.user?.id,
+      game_name: gameConfigRef.current.gameName,
+      card_price: gameConfigRef.current.cardPrice,
+      payment_details: gameConfigRef.current.paymentDetails,
+      winning_mechanic: gameConfigRef.current.winningMechanic,
+      payout_amount: gameConfigRef.current.payoutAmount,
+      start_date: gameConfigRef.current.startDate,
+      start_time: gameConfigRef.current.startTime,
+      game_status: 'idle',
+      drawn_numbers: []
+    });
+
+    if (error) console.error('Error regenerating room:', error);
+
     setGameId(newId);
     setDrawnNumbers([]);
     setLastDrawn(null);
@@ -644,17 +767,46 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setPendingTransactions([]);
     bc.postMessage({ type: 'reset-game' });
     
-    // Broadcast config so new players catch the customized room state
     bc.postMessage({ type: 'update-config', config: gameConfigRef.current });
     return newId;
   }, []);
 
-  const joinGame = useCallback((id: string) => {
-    if (id.trim().toUpperCase().startsWith('BINGO-')) {
-      setGameId(id.trim().toUpperCase());
-      setGameStatus('active');
+  const joinGame = useCallback(async (id: string) => {
+    const formattedId = id.trim().toUpperCase();
+    if (formattedId.startsWith('BINGO-')) {
+      // Check if room exists in Supabase
+      const { data, error } = await supabase.from('rooms').select('*').eq('id', formattedId).single();
+      
+      if (error || !data) {
+        console.error('Sala no encontrada:', error);
+        return false;
+      }
+      
+      // Sync game state from DB
+      setGameId(formattedId);
+      setGameStatus(data.game_status as any);
+      setDrawnNumbers(data.drawn_numbers || []);
+      if (data.drawn_numbers && data.drawn_numbers.length > 0) {
+        setLastDrawn(data.drawn_numbers[data.drawn_numbers.length - 1]);
+      } else {
+        setLastDrawn(null);
+      }
+      
+      setGameConfigState({
+        gameName: data.game_name,
+        cardPrice: data.card_price,
+        paymentDetails: data.payment_details,
+        winningMechanic: data.winning_mechanic as any,
+        customLogo: data.custom_logo,
+        qrCode: data.qr_code,
+        payoutAmount: data.payout_amount,
+        startDate: data.start_date,
+        startTime: data.start_time
+      });
+      
       setPlayerCards([]);
-      // Request state catch-up immediately after joining
+      
+      // Request state catch-up immediately after joining (legacy for now)
       setTimeout(() => {
         bc.postMessage({ type: 'request-game-sync' });
       }, 100);
@@ -672,9 +824,9 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setRole('select');
   }, []);
 
-  const drawNumber = useCallback((specificNum?: number) => {
-    if (drawnNumbers.length >= 75) {
-      setGameStatus('finished');
+  const drawNumber = useCallback(async (specificNum?: number) => {
+    if (drawnNumbers.length >= 75 || !gameId) {
+      if (drawnNumbers.length >= 75) setGameStatus('finished');
       return null;
     }
 
@@ -691,6 +843,17 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const updatedNumbers = [...drawnNumbers, num];
+    
+    const { error } = await supabase.from('rooms').update({
+      drawn_numbers: updatedNumbers,
+      game_status: 'active'
+    }).eq('id', gameId);
+
+    if (error) {
+       console.error('Error updating drawn numbers:', error);
+       return null;
+    }
+
     setDrawnNumbers(updatedNumbers);
     setLastDrawn(num);
     setGameStatus('active');
@@ -698,11 +861,18 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Announce vocals locally
     announceNumber(num);
 
-    // Sync to all other open tabs!
+    // Sync to all other open tabs (Temporary until full Realtime replacement)
     bc.postMessage({ type: 'draw-number', number: num });
 
+    // Also send through Supabase Realtime Broadcast (faster than DB changes)
+    supabase.channel(`room-${gameId}`).send({
+      type: 'broadcast',
+      event: 'draw-number',
+      payload: { number: num }
+    });
+
     return num;
-  }, [drawnNumbers, announceNumber]);
+  }, [drawnNumbers, announceNumber, gameId]);
 
   const resetGame = useCallback(() => {
     setDrawnNumbers([]);
@@ -712,37 +882,64 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     bc.postMessage({ type: 'reset-game' });
   }, []);
 
-  const sendChatMessage = useCallback((text: string, senderName?: string) => {
-    if (!text.trim()) return;
+  const sendChatMessage = useCallback(async (text: string, senderName?: string) => {
+    if (!text.trim() || !gameId) return;
 
     const isUserHost = role === 'host';
     const sender = senderName || (isUserHost ? 'Organizador' : 'Jugador');
+    const msgId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+
+    const { error } = await supabase.from('chat_messages').insert({
+      id: msgId,
+      room_id: gameId,
+      sender,
+      text,
+      is_host: isUserHost
+    });
+
+    if (error) {
+      console.error('Error sending chat message:', error);
+      return;
+    }
 
     const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: msgId,
       sender,
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isHost: isUserHost
     };
 
-    setChatMessages(prev => [...prev, newMsg]);
-    bc.postMessage({ type: 'chat-message', message: newMsg });
+    setChatMessages(prev => {
+      if (prev.some(m => m.id === newMsg.id)) return prev;
+      return [...prev, newMsg];
+    });
 
+    // Simulated response for demonstration
     if (isUserHost && text.toLowerCase().includes('inici')) {
       setTimeout(() => {
-        const reply = {
-          id: `msg-sim-${Date.now()}`,
+        const replyText = '¡Excelente! Ya tengo mis cartones listos.';
+        const replyId = `msg-sim-${Date.now()}`;
+        supabase.from('chat_messages').insert({
+          id: replyId,
+          room_id: gameId,
           sender: 'Carlos Perez',
-          text: '¡Excelente! Ya tengo mis cartones listos.',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isHost: false
-        };
-        setChatMessages(prev => [...prev, reply]);
-        bc.postMessage({ type: 'chat-message', message: reply });
+          text: replyText,
+          is_host: false
+        }).then(({error: replyError}) => {
+          if (!replyError) {
+             setChatMessages(prev => [...prev, {
+               id: replyId,
+               sender: 'Carlos Perez',
+               text: replyText,
+               timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+               isHost: false
+             }]);
+          }
+        });
       }, 1000);
     }
-  }, [role]);
+  }, [role, gameId]);
 
   const approveTransaction = useCallback((id: string) => {
     setPendingTransactions(prev => 
