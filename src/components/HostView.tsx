@@ -31,6 +31,8 @@ export const HostView: React.FC = () => {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [chatInput, setChatInput]       = useState('');
   const [stream, setStream]             = useState<MediaStream | null>(null);
+  const [cameras, setCameras]           = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('environment'); // 'environment' = trasera
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
 
   // Toast notification state
@@ -459,11 +461,41 @@ export const HostView: React.FC = () => {
     return () => { clearInterval(interval); bc.postMessage({ frame: null }); bc.close(); };
   }, [isStreaming, stream]);
 
+  // ── Enumerate cameras on mount ──
+  useEffect(() => {
+    const loadCameras = async () => {
+      try {
+        // Request permission first so labels are populated
+        await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop()));
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        setCameras(videoDevices);
+        // Prefer rear camera by default on mobile
+        const rear = videoDevices.find(d =>
+          d.label.toLowerCase().includes('back') ||
+          d.label.toLowerCase().includes('rear') ||
+          d.label.toLowerCase().includes('trasera') ||
+          d.label.toLowerCase().includes('environment')
+        );
+        if (rear) setSelectedCameraId(rear.deviceId);
+      } catch {
+        // Camera not available, will use placeholder
+      }
+    };
+    loadCameras();
+  }, []);
+
   // ── Stream handlers ──
   const handleStartStream = async () => {
     try {
+      // Build video constraints: if selectedCameraId is 'environment' or 'user', use facingMode
+      const isKeyword = selectedCameraId === 'environment' || selectedCameraId === 'user';
+      const videoConstraints = isKeyword
+        ? { facingMode: selectedCameraId, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+        : { deviceId: { exact: selectedCameraId }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+
       const ms = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+        video: videoConstraints,
         audio: true
       });
       setStream(ms);
@@ -595,6 +627,56 @@ export const HostView: React.FC = () => {
                   </div>
               }
             </div>
+
+            {/* Camera Selector */}
+            {!isStreaming && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>📷 Cámara</label>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  {/* Quick toggle: frontal / trasera */}
+                  <button
+                    onClick={() => setSelectedCameraId('environment')}
+                    style={{
+                      flex: 1, padding: '0.35rem', fontSize: '0.7rem', borderRadius: '6px', border: '1px solid',
+                      borderColor: selectedCameraId === 'environment' ? 'var(--accent)' : 'var(--border-color)',
+                      background: selectedCameraId === 'environment' ? 'rgba(139,92,246,0.15)' : 'transparent',
+                      color: selectedCameraId === 'environment' ? 'var(--accent)' : 'var(--text-secondary)',
+                      cursor: 'pointer', transition: 'all 0.2s'
+                    }}
+                  >📷 Trasera</button>
+                  <button
+                    onClick={() => setSelectedCameraId('user')}
+                    style={{
+                      flex: 1, padding: '0.35rem', fontSize: '0.7rem', borderRadius: '6px', border: '1px solid',
+                      borderColor: selectedCameraId === 'user' ? 'var(--accent)' : 'var(--border-color)',
+                      background: selectedCameraId === 'user' ? 'rgba(139,92,246,0.15)' : 'transparent',
+                      color: selectedCameraId === 'user' ? 'var(--accent)' : 'var(--text-secondary)',
+                      cursor: 'pointer', transition: 'all 0.2s'
+                    }}
+                  >🤳 Frontal</button>
+                </div>
+                {/* Full device list (if browser returns labels) */}
+                {cameras.length > 0 && (
+                  <select
+                    value={selectedCameraId}
+                    onChange={e => setSelectedCameraId(e.target.value)}
+                    style={{
+                      width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.7rem', borderRadius: '6px',
+                      border: '1px solid var(--border-color)', background: 'var(--surface-card)',
+                      color: 'var(--text-primary)', cursor: 'pointer'
+                    }}
+                  >
+                    <option value="environment">📷 Cámara Trasera (automática)</option>
+                    <option value="user">🤳 Cámara Frontal (automática)</option>
+                    {cameras.map(cam => (
+                      <option key={cam.deviceId} value={cam.deviceId}>
+                        {cam.label || `Cámara ${cameras.indexOf(cam) + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
 
             {/* Controls */}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
