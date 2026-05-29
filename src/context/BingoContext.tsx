@@ -781,7 +781,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const username = user.trim().toLowerCase();
       const email = `${username}@bingokno.local`;
       
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
         email,
         password: pass,
       });
@@ -792,7 +792,27 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       setHostUser(username);
       
-      // We'll load config when they join/create a room, for now use default
+      if (authData.user) {
+        const { data: profile } = await supabase
+          .from('host_profiles')
+          .select('*')
+          .eq('id', authData.user.id)
+          .single();
+
+        if (profile) {
+          setGameConfigState(prev => ({
+            ...prev,
+            gameName: profile.game_name || prev.gameName,
+            cardPrice: profile.card_price !== null ? profile.card_price : prev.cardPrice,
+            paymentDetails: profile.payment_details || prev.paymentDetails,
+            winningMechanic: profile.winning_mechanic || prev.winningMechanic,
+            customLogo: profile.custom_logo || null,
+            qrCode: profile.qr_code || null,
+            payoutAmount: profile.payout_amount || prev.payoutAmount
+          }));
+        }
+      }
+      
       return { success: true };
     } catch (e) {
       return { success: false, error: 'Error al iniciar sesión.' };
@@ -1292,20 +1312,35 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const updated = { ...prev, ...newConfig };
       bc.postMessage({ type: 'update-config', config: updated });
       
-      if (gameIdRef.current) {
+      if (hostUserRef.current) {
         if (updateConfigTimeoutRef.current) clearTimeout(updateConfigTimeoutRef.current);
         updateConfigTimeoutRef.current = setTimeout(async () => {
-          await supabase.from('rooms').update({
+          // 1. Update the active room settings
+          if (gameIdRef.current) {
+            await supabase.from('rooms').update({
+              game_name: updated.gameName,
+              card_price: updated.cardPrice,
+              payment_details: updated.paymentDetails,
+              winning_mechanic: updated.winningMechanic,
+              custom_logo: updated.customLogo,
+              qr_code: updated.qrCode,
+              payout_amount: updated.payoutAmount,
+              start_date: updated.startDate,
+              start_time: updated.startTime
+            }).eq('id', gameIdRef.current);
+          }
+          
+          // 2. Update the host profile for permanent storage of their settings
+          await supabase.from('host_profiles').update({
             game_name: updated.gameName,
             card_price: updated.cardPrice,
             payment_details: updated.paymentDetails,
             winning_mechanic: updated.winningMechanic,
             custom_logo: updated.customLogo,
             qr_code: updated.qrCode,
-            payout_amount: updated.payoutAmount,
-            start_date: updated.startDate,
-            start_time: updated.startTime
-          }).eq('id', gameIdRef.current);
+            payout_amount: updated.payoutAmount
+          }).eq('username', hostUserRef.current);
+
         }, 1000);
       }
       
