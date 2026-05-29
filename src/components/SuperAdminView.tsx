@@ -51,6 +51,7 @@ export const SuperAdminView: React.FC = () => {
   const [globalPrice, setGlobalPrice] = useState('80.00');
   const [globalQrCode, setGlobalQrCode] = useState<string | null>(null);
   
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -310,7 +311,12 @@ export const SuperAdminView: React.FC = () => {
                           </span>
                         </div>
                         {pay.receipt_image && (
-                          <img src={pay.receipt_image} alt="Comprobante" style={{ width: '100%', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)' }} />
+                          <img 
+                            src={pay.receipt_image} 
+                            alt="Comprobante" 
+                            style={{ width: '100%', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', cursor: 'zoom-in' }} 
+                            onClick={() => setLightboxImage(pay.receipt_image)}
+                          />
                         )}
                         {pay.status === 'pending' && (
                           <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -341,7 +347,12 @@ export const SuperAdminView: React.FC = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Código QR de Yappy (Para recibir pagos de Administradores)</label>
                   {globalQrCode && (
-                    <img src={globalQrCode} alt="Global QR" style={{ width: '150px', height: '150px', borderRadius: '8px', border: '2px solid rgba(255,255,255,0.1)' }} />
+                    <img 
+                      src={globalQrCode} 
+                      alt="Global QR" 
+                      style={{ width: '150px', height: '150px', borderRadius: '8px', border: '2px solid rgba(255,255,255,0.1)', cursor: 'zoom-in' }} 
+                      onClick={() => setLightboxImage(globalQrCode)}
+                    />
                   )}
                   <input type="file" accept="image/*" onChange={handleQRUpload} style={{ fontSize: '0.8rem' }} />
                 </div>
@@ -354,6 +365,21 @@ export const SuperAdminView: React.FC = () => {
           </>
         )}
       </main>
+
+      {/* Lightbox / Zoom modal */}
+      {lightboxImage && (
+        <div 
+          onClick={() => setLightboxImage(null)}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.9)', zIndex: 9999,
+            display: 'flex', justifyContent: 'center', alignItems: 'center',
+            cursor: 'zoom-out', padding: '2rem'
+          }}
+        >
+          <img src={lightboxImage} alt="Zoom" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px' }} />
+        </div>
+      )}
     </div>
   );
 };

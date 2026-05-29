@@ -165,7 +165,12 @@ export const HostView: React.FC = () => {
           {hostProfile?.status !== 'pending_payment' && hostProfile?.status !== 'requesting_demo' && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem' }}>
               {globalSettings?.subscription_qr_code ? (
-                <img src={globalSettings.subscription_qr_code} alt="Pago Yappy" style={{ width: '200px', height: '200px', borderRadius: '12px', border: '2px solid rgba(255,255,255,0.1)' }} />
+                <img 
+                  src={globalSettings.subscription_qr_code} 
+                  alt="Pago Yappy" 
+                  style={{ width: '200px', height: '200px', borderRadius: '12px', border: '2px solid rgba(255,255,255,0.1)', cursor: 'zoom-in' }} 
+                  onClick={() => setLightboxImage(globalSettings.subscription_qr_code)}
+                />
               ) : (
                 <div style={{ padding: '2rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>QR de pago no configurado</div>
               )}
@@ -876,7 +881,12 @@ export const HostView: React.FC = () => {
               <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Código QR de Yappy (Cobro)</label>
               {gameConfig.qrCode ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'var(--bg-primary)', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                  <img src={gameConfig.qrCode} alt="Yappy QR" style={{ width: '40px', height: '40px', objectFit: 'contain', background: 'white', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
+                  <img 
+                    src={gameConfig.qrCode} 
+                    alt="Yappy QR" 
+                    style={{ width: '40px', height: '40px', objectFit: 'contain', background: 'white', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)', cursor: 'zoom-in' }} 
+                    onClick={() => setLightboxImage(gameConfig.qrCode)}
+                  />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '0.75rem', color: 'white', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>QR de Cobro</div>
                     <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Captura QR cargada</div>
