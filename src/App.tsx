@@ -36,6 +36,8 @@ const BingoAppContent: React.FC = () => {
   // Easter egg for Super Admin Login
   const [, setLogoClicks] = useState(0);
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Prevent the URL ?room= auto-join from running more than once
+  const hasJoinedFromURLRef = useRef(false);
 
   const handleLogoClick = () => {
     setLogoClicks(prev => {
@@ -48,21 +50,30 @@ const BingoAppContent: React.FC = () => {
     });
 
     if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
-    clickTimeoutRef.current = setTimeout(() => setLogoClicks(0), 1000); // reset if 1 second passes between clicks
+    clickTimeoutRef.current = setTimeout(() => setLogoClicks(0), 1000);
   };
 
   // Handle URL Room parameters for auto-join link generation!
+  // Only fires ONCE on mount — prevents host from being switched to player on re-renders
   useEffect(() => {
+    if (hasJoinedFromURLRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
-    if (roomParam && role !== 'host' && role !== 'superadmin') {
+    // Never auto-join if already logged in as host or super admin
+    const currentRole = sessionStorage.getItem('bingo_role') || 'select';
+    if (roomParam && currentRole !== 'host' && currentRole !== 'superadmin') {
+      hasJoinedFromURLRef.current = true;
       joinGame(roomParam).then(success => {
         if (success) {
           setRole('player');
         }
       });
+    } else if (roomParam && (currentRole === 'host' || currentRole === 'superadmin')) {
+      // Mark as handled so we don't keep trying
+      hasJoinedFromURLRef.current = true;
     }
-  }, [joinGame, setRole, role]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleHostClick = async () => {
     if (hostUser) {

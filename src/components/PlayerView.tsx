@@ -156,18 +156,90 @@ export const PlayerView: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  // Live audio streaming refs & state
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const mediaSourceRef = useRef<MediaSource | null>(null);
-  const sourceBufferRef = useRef<SourceBuffer | null>(null);
-  const queueRef = useRef<ArrayBuffer[]>([]);
+  // Live audio streaming — Web Audio API (works on iOS)
+  const audioContextRef = useRef<AudioContext | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const isMutedRef = useRef(false);
+
+  // Keep isMutedRef in sync
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
+  // Create / unlock AudioContext on first user interaction
+  const unlockAudio = () => {
+    if (!audioContextRef.current) {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      audioContextRef.current = new AudioCtx();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+    setAudioUnlocked(true);
+  };
+
+  // BroadcastChannel listener for audio chunks from BingoContext
+  useEffect(() => {
+    const audioBc = new BroadcastChannel('bingo-kno-audio-channel');
+
+    const handleAudioMessage = async (e: MessageEvent) => {
+      const chunk: ArrayBuffer = e.data?.audioChunk;
+      if (!chunk || isMutedRef.current) return;
+
+      // Ensure AudioContext exists and is running
+      if (!audioContextRef.current) {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return;
+        audioContextRef.current = new AudioCtx();
+      }
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        await ctx.resume().catch(() => {});
+      }
+
+      try {
+        const buffer = await ctx.decodeAudioData(chunk.slice(0));
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+      } catch (err) {
+        // Chunk may be incomplete or codec mismatch — skip silently
+      }
+    };
+
+    audioBc.addEventListener('message', handleAudioMessage);
+    return () => {
+      audioBc.removeEventListener('message', handleAudioMessage);
+      audioBc.close();
+      audioContextRef.current?.close();
+      audioContextRef.current = null;
+    };
+  }, []);
 
 
   // Collapsible top chat state
   const [chatExpanded, setChatExpanded] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const prevChatLengthRef = useRef(0);
+
+  // Track unread messages when chat is collapsed
+  useEffect(() => {
+    if (chatExpanded) {
+      setUnreadChatCount(0);
+      prevChatLengthRef.current = chatMessages.length;
+    } else {
+      const newMessages = chatMessages.length - prevChatLengthRef.current;
+      if (newMessages > 0) {
+        setUnreadChatCount(prev => prev + newMessages);
+        prevChatLengthRef.current = chatMessages.length;
+      }
+    }
+  }, [chatMessages, chatExpanded]);
 
   // Auto scroll collapsible chat to bottom
   useEffect(() => {
@@ -209,94 +281,14 @@ export const PlayerView: React.FC = () => {
 
   // Receive LIVE stream frames from host (handled globally in BingoContext, local hook removed)
 
-  // Manage muting / unmuting and playback initialization
+  // Mute/unmute toggle
   useEffect(() => {
     if (isMuted) {
-      if (audioRef.current) audioRef.current.muted = true;
-      return;
-    }
-    if (audioRef.current) {
-      audioRef.current.muted = false;
-      audioRef.current.play().catch(err => console.log('Autoplay audio wait:', err));
+      audioContextRef.current?.suspend();
+    } else {
+      audioContextRef.current?.resume().catch(() => {});
     }
   }, [isMuted]);
-
-  // Set up WebM/MP4 MSE audio chunk streaming via BroadcastChannel
-  useEffect(() => {
-    const audio = document.createElement('audio');
-    audio.autoplay = true;
-    audioRef.current = audio;
-    document.body.appendChild(audio);
-
-    if (typeof window === 'undefined' || !window.MediaSource) {
-      console.warn('MediaSource API no está soportada en este navegador (ej. iOS Safari). El audio en vivo no funcionará.');
-      return;
-    }
-
-    const ms = new MediaSource();
-    mediaSourceRef.current = ms;
-    audio.src = URL.createObjectURL(ms);
-
-    let mimeType = 'audio/webm; codecs="opus"';
-    if (typeof MediaRecorder !== 'undefined') {
-      if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus') && MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4';
-      }
-    }
-
-    ms.addEventListener('sourceopen', () => {
-      try {
-        const sb = ms.addSourceBuffer(mimeType);
-        sourceBufferRef.current = sb;
-
-        sb.addEventListener('updateend', () => {
-          if (queueRef.current.length > 0 && !sb.updating) {
-            const next = queueRef.current.shift();
-            if (next) sb.appendBuffer(next);
-          }
-        });
-      } catch (err) {
-        console.error('Error adding SourceBuffer:', err);
-      }
-    });
-
-    const audioBc = new BroadcastChannel('bingo-kno-audio-channel');
-    
-    const handleAudioMessage = (e: MessageEvent) => {
-      const chunk = e.data?.audioChunk;
-      if (!chunk) return;
-
-      const sb = sourceBufferRef.current;
-      if (sb) {
-        if (!sb.updating && queueRef.current.length === 0) {
-          try {
-            sb.appendBuffer(chunk);
-          } catch (err) {
-            console.error('Error appending buffer directly:', err);
-          }
-        } else {
-          queueRef.current.push(chunk);
-        }
-
-        // Try playing if paused (handles user gesture autoplay resumption)
-        if (audio.paused && !isMuted) {
-          audio.play().catch(() => {});
-        }
-      }
-    };
-
-    audioBc.addEventListener('message', handleAudioMessage);
-
-    return () => {
-      audioBc.removeEventListener('message', handleAudioMessage);
-      audioBc.close();
-      audio.pause();
-      if (audio.parentNode) {
-        document.body.removeChild(audio);
-      }
-      audioRef.current = null;
-    };
-  }, []);
 
   const getBallLetter = (num: number) => {
     if (num >= 1 && num <= 15) return 'B';
@@ -521,20 +513,43 @@ export const PlayerView: React.FC = () => {
           </div>
           
           <button 
-            onClick={() => setChatExpanded(!chatExpanded)}
+            onClick={() => { setChatExpanded(!chatExpanded); if (!chatExpanded) setUnreadChatCount(0); }}
             style={{ 
-              background: 'rgba(139, 92, 246, 0.15)', 
-              border: '1px solid rgba(139, 92, 246, 0.3)', 
-              color: '#c084fc', 
+              position: 'relative',
+              background: unreadChatCount > 0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(139, 92, 246, 0.15)', 
+              border: `1px solid ${unreadChatCount > 0 ? 'rgba(239, 68, 68, 0.5)' : 'rgba(139, 92, 246, 0.3)'}`, 
+              color: unreadChatCount > 0 ? '#f87171' : '#c084fc', 
               fontSize: '0.75rem', 
               padding: '0.2rem 0.6rem', 
               borderRadius: '4px', 
               cursor: 'pointer', 
               fontWeight: 'bold',
-              transition: 'var(--transition-fast)'
+              transition: 'var(--transition-fast)',
+              animation: unreadChatCount > 0 ? 'pulse 1.5s infinite' : 'none'
             }}
           >
-            {chatExpanded ? '✕ Contraer' : '💬 Abrir Chat'}
+            {chatExpanded ? '✕ Contraer' : `💬 Abrir Chat`}
+            {unreadChatCount > 0 && !chatExpanded && (
+              <span style={{
+                position: 'absolute',
+                top: '-8px',
+                right: '-8px',
+                background: '#ef4444',
+                color: 'white',
+                borderRadius: '50%',
+                width: '18px',
+                height: '18px',
+                fontSize: '0.6rem',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '2px solid var(--bg-primary)',
+                animation: 'ballPop 0.3s ease'
+              }}>
+                {unreadChatCount > 9 ? '9+' : unreadChatCount}
+              </span>
+            )}
           </button>
         </div>
 
@@ -634,9 +649,33 @@ export const PlayerView: React.FC = () => {
                 <Tv size={14} className="text-violet-400" /> Transmisión en Vivo
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {isStreaming && (
+                {isStreaming && !audioUnlocked && (
                   <button
-                    onClick={() => setIsMuted(!isMuted)}
+                    onClick={() => { unlockAudio(); }}
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(16,185,129,0.25), rgba(5,150,105,0.15))',
+                      border: '1px solid rgba(16,185,129,0.5)',
+                      borderRadius: '4px',
+                      color: '#34d399',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0.25rem 0.5rem',
+                      fontSize: '0.65rem',
+                      fontWeight: 'bold',
+                      gap: '0.25rem',
+                      animation: 'pulse 2s infinite',
+                      outline: 'none'
+                    }}
+                    title="Tap para activar audio del live"
+                  >
+                    🔊 Activar Audio
+                  </button>
+                )}
+                {isStreaming && audioUnlocked && (
+                  <button
+                    onClick={() => { setIsMuted(!isMuted); unlockAudio(); }}
                     style={{
                       background: 'rgba(139, 92, 246, 0.15)',
                       border: '1px solid rgba(139, 92, 246, 0.3)',

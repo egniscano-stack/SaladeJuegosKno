@@ -45,6 +45,19 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* MOBILE ANTI-ZOOM: iOS Safari zooms in when focused element font-size < 16px.
+   Force all inputs, selects, and textareas to use at least 16px font-size. */
+input, select, textarea {
+  font-size: 16px !important;
+  touch-action: manipulation;
+}
+
+/* Prevent double-tap zoom on buttons and interactive elements */
+button, a, [role="button"] {
+  touch-action: manipulation;
+}
+
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);

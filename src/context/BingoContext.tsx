@@ -360,7 +360,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const channel = supabase.channel(`room-${gameId}`)
       // Listen to room updates (e.g. drawn_numbers, game_status, configs)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${gameId}` }, (payload) => {
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${gameId}` }, async (payload) => {
         const data = payload.new as any;
         if (roleRef.current === 'player') {
           if (data.drawn_numbers) {
@@ -376,18 +376,27 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
           if (data.game_status) setGameStatus(data.game_status);
 
-          // Sincronizar configuraciones de la sala en tiempo real para el jugador
-          setGameConfigState({
-            gameName: data.game_name || '',
-            cardPrice: data.card_price !== undefined ? data.card_price : '',
-            paymentDetails: data.payment_details || '',
-            winningMechanic: (data.winning_mechanic || 'full') as any,
-            customLogo: data.custom_logo || null,
-            qrCode: data.qr_code || null,
-            payoutAmount: data.payout_amount || '',
-            startDate: data.start_date || '',
-            startTime: data.start_time || ''
-          });
+          // Re-fetch full room data from DB to avoid truncated payload (base64 images)
+          // postgres_changes payloads truncate large text fields like custom_logo and qr_code
+          const { data: fullRoom } = await supabase
+            .from('rooms')
+            .select('*')
+            .eq('id', gameIdRef.current)
+            .single();
+          
+          if (fullRoom) {
+            setGameConfigState({
+              gameName: fullRoom.game_name || '',
+              cardPrice: fullRoom.card_price !== undefined ? fullRoom.card_price : '',
+              paymentDetails: fullRoom.payment_details || '',
+              winningMechanic: (fullRoom.winning_mechanic || 'full') as any,
+              customLogo: fullRoom.custom_logo || null,
+              qrCode: fullRoom.qr_code || null,
+              payoutAmount: fullRoom.payout_amount || '',
+              startDate: fullRoom.start_date || '',
+              startTime: fullRoom.start_time || ''
+            });
+          }
         }
       })
       // Listen to new chat messages
@@ -1806,20 +1815,32 @@ const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
   return bytes.buffer;
 };
 
-// Soft beep sound generator for incoming chat alerts
+// Chime sound for incoming chat messages (3-note ascending pattern, louder)
 const playChatBeep = () => {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(1000, ctx.currentTime);
-    gain.gain.setValueAtTime(0.04, ctx.currentTime);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.08);
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+
+    const playNote = (freq: number, startTime: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(0.3, startTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    };
+
+    const now = ctx.currentTime;
+    playNote(880, now, 0.12);        // A5
+    playNote(1046.5, now + 0.13, 0.12); // C6
+    playNote(1318.5, now + 0.26, 0.2);  // E6 (longer)
   } catch (e) {
-    console.error('AudioContext not supported for chat beep');
+    // Silently ignore — browser audio policy may block this
   }
 };
