@@ -148,7 +148,7 @@ const BingoAppContent: React.FC = () => {
               flexDirection: 'column',
               gap: '0.5rem',
               minWidth: '220px',
-              zIndex: 1000,
+              zIndex: 99999,
               boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
               backdropFilter: 'blur(10px)'
             }}>

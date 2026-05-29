@@ -300,8 +300,8 @@ const speakText = (text: string) => {
 };
 
 export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [role, setRole] = useState<Role>('select');
-  const [gameId, setGameId] = useState<string>('');
+  const [role, setRole] = useState<Role>(() => (sessionStorage.getItem('bingo_role') as Role) || 'select');
+  const [gameId, setGameId] = useState<string>(() => sessionStorage.getItem('bingo_gameId') || '');
   const [gameStatus, setGameStatus] = useState<'idle' | 'active' | 'finished'>('idle');
   const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
   const [lastDrawn, setLastDrawn] = useState<number | null>(null);
@@ -312,9 +312,23 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isStreaming, setIsStreamingState] = useState<boolean>(false);
   
   // Host user authentication state
-  const [hostUser, setHostUser] = useState<string | null>(null);
-  const [hostProfile, setHostProfile] = useState<HostProfileData | null>(null);
-  const [superAdminUser, setSuperAdminUser] = useState<string | null>(null);
+  const [hostUser, setHostUser] = useState<string | null>(() => sessionStorage.getItem('bingo_hostUser') || null);
+  const [hostProfile, setHostProfile] = useState<HostProfileData | null>(() => {
+    const saved = sessionStorage.getItem('bingo_hostProfile');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [superAdminUser, setSuperAdminUser] = useState<string | null>(() => sessionStorage.getItem('bingo_superAdminUser') || null);
+
+  useEffect(() => {
+    sessionStorage.setItem('bingo_role', role);
+    sessionStorage.setItem('bingo_gameId', gameId);
+    if (hostUser) sessionStorage.setItem('bingo_hostUser', hostUser);
+    else sessionStorage.removeItem('bingo_hostUser');
+    if (superAdminUser) sessionStorage.setItem('bingo_superAdminUser', superAdminUser);
+    else sessionStorage.removeItem('bingo_superAdminUser');
+    if (hostProfile) sessionStorage.setItem('bingo_hostProfile', JSON.stringify(hostProfile));
+    else sessionStorage.removeItem('bingo_hostProfile');
+  }, [role, gameId, hostUser, superAdminUser, hostProfile]);
 
   const [gameConfig, setGameConfigState] = useState<GameConfig>({
     gameName: 'Bingo-KNO',
