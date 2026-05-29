@@ -74,7 +74,7 @@ export interface BingoClaim {
 
 export interface HostProfileData {
   id: string;
-  status: 'demo' | 'active' | 'suspended' | 'pending_payment';
+  status: 'demo' | 'active' | 'suspended' | 'pending_payment' | 'requesting_access' | 'requesting_demo';
   subscription_end_date: string;
 }
 
@@ -764,7 +764,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Insert into profile table
         const { error: profileError, data: profileData } = await supabase
           .from('host_profiles')
-          .insert({ id: data.user.id, username, status: 'demo' })
+          .insert({ id: data.user.id, username, status: 'requesting_access' })
           .select()
           .single();
           

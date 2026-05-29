@@ -6,7 +6,7 @@ import { LogOut, Users, Settings, Activity, CheckCircle, XCircle, Trash2, Gift, 
 interface HostProfile {
   id: string;
   username: string;
-  status: 'demo' | 'active' | 'suspended' | 'pending_payment';
+  status: 'demo' | 'active' | 'suspended' | 'pending_payment' | 'requesting_access' | 'requesting_demo';
   subscription_end_date: string;
   total_usage_seconds: number;
   created_at: string;
@@ -70,7 +70,14 @@ export const SuperAdminView: React.FC = () => {
     loadData();
   };
 
-  const grantDemo = async (hostId: string, days: number) => {
+  const grantDemo = async (hostId: string) => {
+    const daysStr = prompt('¿Cuántos días de Demo deseas otorgar?', '3');
+    if (!daysStr) return;
+    const days = parseInt(daysStr, 10);
+    if (isNaN(days) || days <= 0) {
+      alert('Número de días inválido');
+      return;
+    }
     const d = new Date();
     d.setDate(d.getDate() + days);
     await supabase.from('host_profiles').update({ 
@@ -193,10 +200,10 @@ export const SuperAdminView: React.FC = () => {
                           <td style={{ padding: '1rem' }}>
                             <span style={{ 
                               padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold',
-                              background: p.status === 'active' ? 'rgba(34,197,94,0.2)' : p.status === 'suspended' ? 'rgba(239,68,68,0.2)' : p.status === 'demo' ? 'rgba(59,130,246,0.2)' : 'rgba(245,158,11,0.2)',
-                              color: p.status === 'active' ? '#22c55e' : p.status === 'suspended' ? '#ef4444' : p.status === 'demo' ? '#3b82f6' : '#f59e0b'
+                              background: p.status === 'active' ? 'rgba(34,197,94,0.2)' : p.status === 'suspended' ? 'rgba(239,68,68,0.2)' : p.status === 'demo' ? 'rgba(59,130,246,0.2)' : p.status === 'requesting_demo' ? 'rgba(168,85,247,0.2)' : 'rgba(245,158,11,0.2)',
+                              color: p.status === 'active' ? '#22c55e' : p.status === 'suspended' ? '#ef4444' : p.status === 'demo' ? '#3b82f6' : p.status === 'requesting_demo' ? '#a855f7' : '#f59e0b'
                             }}>
-                              {p.status.toUpperCase()}
+                              {p.status.toUpperCase().replace('_', ' ')}
                             </span>
                           </td>
                           <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>
@@ -210,7 +217,7 @@ export const SuperAdminView: React.FC = () => {
                             {p.status !== 'suspended' && (
                               <button onClick={() => updateHostStatus(p.id, 'suspended')} title="Suspender" style={{ background: '#ef4444', color: 'white', border: 'none', padding: '0.4rem', borderRadius: '4px', cursor: 'pointer' }}><XCircle size={14} /></button>
                             )}
-                            <button onClick={() => grantDemo(p.id, 3)} title="Dar 3 días Demo" style={{ background: '#3b82f6', color: 'white', border: 'none', padding: '0.4rem', borderRadius: '4px', cursor: 'pointer' }}><Gift size={14} /></button>
+                            <button onClick={() => grantDemo(p.id)} title="Dar Demo" style={{ background: p.status === 'requesting_demo' ? '#a855f7' : '#3b82f6', color: 'white', border: 'none', padding: '0.4rem', borderRadius: '4px', cursor: 'pointer' }}><Gift size={14} /></button>
                             <button onClick={() => deleteHost(p.id)} title="Eliminar (Suspender)" style={{ background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', padding: '0.4rem', borderRadius: '4px', cursor: 'pointer' }}><Trash2 size={14} /></button>
                           </td>
                         </tr>
