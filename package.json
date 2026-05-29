@@ -1,0 +1,61 @@
+{
+  "name": "bingo-kno",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "electron.cjs",
+  "scripts": {
+    "dev": "vite --host --port 5173",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "electron:start": "npm run build && electron .",
+    "electron:build": "npm run build && electron-builder -c.extraMetadata.main=electron.cjs",
+    "electron:build:win": "npm run build && electron-builder --win -c.extraMetadata.main=electron.cjs",
+    "electron:build:mac": "npm run build && electron-builder --mac -c.extraMetadata.main=electron.cjs",
+    "cap:sync": "npm run build && npx cap sync"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/ios": "^8.3.1",
+    "@supabase/supabase-js": "^2.106.2",
+    "electron-is-dev": "^3.0.1",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  },
+  "build": {
+    "appId": "com.bingokno.app",
+    "productName": "Bingo Kno",
+    "files": [
+      "dist/**/*",
+      "electron.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "directories": {
+      "output": "release"
+    }
+  }
+}
