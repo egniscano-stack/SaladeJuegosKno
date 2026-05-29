@@ -474,6 +474,9 @@ export const PlayerView: React.FC = () => {
       gameConfig.winningMechanic === 'cajon' ? 'Cajón' :
       gameConfig.winningMechanic === 'terna' ? 'Terna' : 'Línea';
     triggerToast(`🎉 ¡Gritaste ${winTypeString}! Tu cartón fue enviado al administrador de sala para su verificación en vivo.`);
+    
+    // Set isWinner to true locally so the congratulations validation screen opens immediately!
+    setPlayerCards(prev => prev.map(c => c.id === cardId ? { ...c, isWinner: true, type: winTypeString as any } : c));
   };
 
 
@@ -1296,9 +1299,25 @@ export const PlayerView: React.FC = () => {
 
               {/* Settlement Form or Bilateral Chat Feed */}
               {!activeClaim ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', padding: '2rem 0' }}>
-                  <span className="spinner-border" style={{ width: '24px', height: '24px', border: '3px solid var(--accent-gold)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Cargando consola de cobros...</p>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', padding: '1.5rem 0', width: '100%' }}>
+                  <span className="spinner-border" style={{ width: '36px', height: '36px', border: '3px solid var(--accent-gold)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 'bold', color: 'var(--accent-gold)', margin: 0 }}>Validando tu Cartón en Vivo...</h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.4', maxWidth: '380px', margin: '0 auto' }}>
+                    El administrador está comprobando que tus marcas coincidan con los números cantados. Por favor, mantente en esta pantalla.
+                  </p>
+                  <div style={{
+                    background: 'rgba(245, 158, 11, 0.06)',
+                    border: '1px solid rgba(245, 158, 11, 0.18)',
+                    borderRadius: '8px',
+                    padding: '0.75rem',
+                    fontSize: '0.7rem',
+                    color: '#f59e0b',
+                    textAlign: 'left',
+                    width: '100%',
+                    lineHeight: '1.3'
+                  }}>
+                    <strong>💡 Consola de Cobro Automática:</strong> Una vez aprobado tu cartón por el administrador, esta pantalla cambiará instantáneamente para permitirte subir tu QR de Yappy o cuenta de banco y cobrar tu premio.
+                  </div>
                 </div>
               ) : (!activeClaim.payoutStatus || activeClaim.payoutStatus === 'pending') ? (
                 <div style={{ width: '100%', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

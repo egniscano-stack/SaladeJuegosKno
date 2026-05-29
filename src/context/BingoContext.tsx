@@ -703,6 +703,14 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }
               return c;
             }));
+          } else {
+            // If rejected, ensure player's card clears winner state so congrats overlay closes
+            setPlayerCards(prev => prev.map(c => {
+              if (c.id === data.cardId) {
+                return { ...c, isWinner: false };
+              }
+              return c;
+            }));
           }
           break;
         case 'submit-payout-details':
@@ -1009,6 +1017,8 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       card_price: gameConfigRef.current.cardPrice,
       payment_details: gameConfigRef.current.paymentDetails,
       winning_mechanic: gameConfigRef.current.winningMechanic,
+      custom_logo: gameConfigRef.current.customLogo,
+      qr_code: gameConfigRef.current.qrCode,
       payout_amount: gameConfigRef.current.payoutAmount,
       start_date: gameConfigRef.current.startDate,
       start_time: gameConfigRef.current.startTime,
@@ -1040,6 +1050,8 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       card_price: gameConfigRef.current.cardPrice,
       payment_details: gameConfigRef.current.paymentDetails,
       winning_mechanic: gameConfigRef.current.winningMechanic,
+      custom_logo: gameConfigRef.current.customLogo,
+      qr_code: gameConfigRef.current.qrCode,
       payout_amount: gameConfigRef.current.payoutAmount,
       start_date: gameConfigRef.current.startDate,
       start_time: gameConfigRef.current.startTime,

@@ -295,12 +295,14 @@ export const HostView: React.FC = () => {
       return;
     }
 
-    let audioCtx: AudioContext | null = null;
+    let audioCtx: AudioContext | null = (window as any).hostAudioCtx || null;
     let source: MediaStreamAudioSourceNode | null = null;
     let processor: ScriptProcessorNode | null = null;
 
     try {
-      audioCtx = new AudioCtx();
+      if (!audioCtx) {
+        audioCtx = new AudioCtx();
+      }
       
       // Mono capture stream
       const audioStream = new MediaStream(stream.getAudioTracks());
@@ -550,6 +552,20 @@ export const HostView: React.FC = () => {
   // ── Stream handlers ──
   const handleStartStream = async () => {
     try {
+      // Pre-unlock and run host AudioContext inside the user gesture callback
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        try {
+          const ctx = new AudioCtx();
+          if (ctx.state === 'suspended') {
+            await ctx.resume().catch(() => {});
+          }
+          (window as any).hostAudioCtx = ctx;
+        } catch (e) {
+          console.error("Failed to pre-unlock AudioContext:", e);
+        }
+      }
+
       // Build video constraints: if selectedCameraId is 'environment' or 'user', use facingMode
       const isKeyword = selectedCameraId === 'environment' || selectedCameraId === 'user';
       const videoConstraints = isKeyword
