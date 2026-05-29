@@ -740,12 +740,13 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const hostRegister = useCallback(async (user: string, pass: string) => {
     try {
       const username = user.trim().toLowerCase();
-      if (!username || !pass.trim()) {
-        return { success: false, error: 'Por favor completa todos los campos.' };
+      const safeUsername = username.replace(/[^a-z0-9]/g, '');
+      if (!safeUsername || !pass.trim()) {
+        return { success: false, error: 'Por favor completa todos los campos (solo letras y números para usuario).' };
       }
 
       // Convert username to a dummy email for Supabase Auth
-      const email = `${username}@bingokno.local`;
+      const email = `${safeUsername}@bingokno.com`;
       
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -801,7 +802,8 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const hostLogin = useCallback(async (user: string, pass: string) => {
     try {
       const username = user.trim().toLowerCase();
-      const email = `${username}@bingokno.local`;
+      const safeUsername = username.replace(/[^a-z0-9]/g, '');
+      const email = `${safeUsername}@bingokno.com`;
       
       const { data: authData, error } = await supabase.auth.signInWithPassword({
         email,
@@ -857,11 +859,12 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const superAdminRegister = useCallback(async (user: string, pass: string) => {
     try {
       const username = user.trim().toLowerCase();
-      if (!username || !pass.trim()) {
-        return { success: false, error: 'Por favor completa todos los campos.' };
+      const safeUsername = username.replace(/[^a-z0-9]/g, '');
+      if (!safeUsername || !pass.trim()) {
+        return { success: false, error: 'Por favor completa todos los campos (solo letras y números para usuario).' };
       }
 
-      const email = `${username}@superadmin.local`;
+      const email = `${safeUsername}@superadmin.com`;
       const { data, error } = await supabase.auth.signUp({
         email,
         password: pass,
@@ -896,7 +899,8 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const superAdminLogin = useCallback(async (user: string, pass: string) => {
     try {
       const username = user.trim().toLowerCase();
-      const email = `${username}@bingokno.local`;
+      const safeUsername = username.replace(/[^a-z0-9]/g, '');
+      const email = `${safeUsername}@superadmin.com`;
       
       const { data: authData, error } = await supabase.auth.signInWithPassword({
         email,
