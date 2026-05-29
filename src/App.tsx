@@ -4,7 +4,7 @@ import { HostView } from './components/HostView';
 import { PlayerView } from './components/PlayerView';
 import { SuperAdminView } from './components/SuperAdminView';
 import { 
-  Users, Wifi, PlusCircle, Lock, LogIn, KeyRound, ArrowLeft
+  Users, Wifi, PlusCircle, Lock, LogIn, KeyRound, ArrowLeft, Menu, LogOut, ChevronDown
 } from 'lucide-react';
 import appLogo from './logo.png';
 
@@ -23,8 +23,11 @@ const BingoAppContent: React.FC = () => {
     superAdminUser,
     superAdminLogin,
     superAdminRegister,
-    superAdminLogout
+    superAdminLogout,
+    leaveGame
   } = useBingo();
+
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 
   const [hostAuthMode, setHostAuthMode] = useState<'none' | 'login' | 'register'>('none');
   const [superAdminAuthMode, setSuperAdminAuthMode] = useState<'login' | 'register'>('login');
@@ -110,43 +113,88 @@ const BingoAppContent: React.FC = () => {
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-          {hostUser && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(255,255,255,0.03)', padding: '0.25rem 0.45rem', borderRadius: '6px', border: '1px solid var(--border-color)', flexShrink: 0 }}>
-              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', maxWidth: '90px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                <strong style={{ color: 'white' }}>{hostUser}</strong>
-              </span>
-              <button 
-                onClick={hostLogout}
-                style={{
-                  background: 'rgba(239,68,68,0.15)',
-                  border: '1px solid rgba(239,68,68,0.3)',
-                  color: '#ef4444',
-                  fontSize: '0.65rem',
-                  padding: '0.15rem 0.35rem',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold',
-                  outline: 'none',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0
-                }}
-                title="Cerrar Sesión"
-              >
-                Salir
-              </button>
-            </div>
+        <div style={{ position: 'relative' }}>
+          {(hostUser || gameId) && (
+            <button 
+              onClick={() => setHeaderMenuOpen(!headerMenuOpen)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                padding: '0.4rem 0.8rem',
+                borderRadius: '8px',
+                color: 'white',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                fontSize: '0.8rem'
+              }}
+            >
+              <Menu size={16} /> Opciones <ChevronDown size={14} />
+            </button>
           )}
 
-          {gameId && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', background: 'var(--bg-tertiary)', padding: '0.2rem 0.45rem', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}>
-                <Wifi size={12} style={{ color: '#10b981', flexShrink: 0 }} />
-                <strong style={{ color: 'white', fontSize: '0.65rem' }}>{gameId}</strong>
-              </span>
-              <span style={{ fontSize: '0.65rem', background: role === 'host' ? 'rgba(139,92,246,0.15)' : 'rgba(245,158,11,0.15)', color: role === 'host' ? 'var(--accent-violet)' : 'var(--accent-gold)', padding: '0.2rem 0.4rem', borderRadius: '4px', border: role === 'host' ? '1px solid rgba(139,92,246,0.3)' : '1px solid rgba(245,158,11,0.3)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                {role === 'host' ? 'Admin' : 'Jugador'}
-              </span>
+          {headerMenuOpen && (hostUser || gameId) && (
+            <div style={{
+              position: 'absolute',
+              top: '120%',
+              right: 0,
+              background: 'rgba(20, 10, 10, 0.98)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '0.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem',
+              minWidth: '220px',
+              zIndex: 1000,
+              boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+              backdropFilter: 'blur(10px)'
+            }}>
+              {/* Role Indicator */}
+              {gameId && (
+                <div style={{ padding: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <Wifi size={12} style={{ color: '#10b981' }} /> <strong>{gameId}</strong>
+                  </span>
+                  <span style={{ fontSize: '0.65rem', background: role === 'host' ? 'rgba(139,92,246,0.15)' : 'rgba(245,158,11,0.15)', color: role === 'host' ? 'var(--accent-violet)' : 'var(--accent-gold)', padding: '0.2rem 0.4rem', borderRadius: '4px', border: role === 'host' ? '1px solid rgba(139,92,246,0.3)' : '1px solid rgba(245,158,11,0.3)', fontWeight: 'bold', display: 'inline-block', width: 'fit-content' }}>
+                    {role === 'host' ? 'Admin' : 'Jugador'}
+                  </span>
+                </div>
+              )}
+
+              {/* Host Username */}
+              {hostUser && (
+                <div style={{ padding: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  Sesión: <strong style={{ color: 'white' }}>{hostUser}</strong>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', marginTop: '0.3rem' }}>
+                {gameId && (
+                  <button 
+                    onClick={() => { leaveGame(); setHeaderMenuOpen(false); }}
+                    style={{ background: 'transparent', border: 'none', color: '#c084fc', padding: '0.5rem', textAlign: 'left', cursor: 'pointer', borderRadius: '4px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                    onMouseOver={e => e.currentTarget.style.background = 'rgba(192, 132, 252, 0.1)'}
+                    onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <ArrowLeft size={14} /> Salir de la Sala
+                  </button>
+                )}
+
+                {hostUser && (
+                  <button 
+                    onClick={() => { hostLogout(); setHeaderMenuOpen(false); }}
+                    style={{ background: 'transparent', border: 'none', color: '#ef4444', padding: '0.5rem', textAlign: 'left', cursor: 'pointer', borderRadius: '4px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                    onMouseOver={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
+                    onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <LogOut size={14} /> Cerrar Sesión
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
