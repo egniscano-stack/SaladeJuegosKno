@@ -1098,12 +1098,13 @@ export const PlayerView: React.FC = () => {
                     </button>
                     <button 
                       className="btn-primary" 
-                      onClick={() => {
+                      onClick={async () => {
                         if (!purchaseReceipt) {
                           alert('Por favor sube la captura de tu transferencia de pago Yappy.');
                           return;
                         }
-                        buyCards(quantity, playerName, purchaseReceipt);
+                        const txId = await buyCards(quantity, playerName, purchaseReceipt);
+                        setPurchaseTxId(txId);
                         setPurchaseSubmitted(true);
                         triggerToast('¡Comprobante de pago enviado al organizador!');
                       }} 

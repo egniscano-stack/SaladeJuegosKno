@@ -107,9 +107,9 @@ interface BingoContextType {
   resetGame: () => void;
   regenerateRoom: () => Promise<string>;
   sendChatMessage: (text: string, senderName?: string) => Promise<void>;
-  buyCards: (quantity: number, playerName: string, paymentReceipt?: string) => string; // Returns transaction ID
-  approveTransaction: (id: string) => void;
-  rejectTransaction: (id: string, reason: string) => void;
+  buyCards: (quantity: number, playerName: string, paymentReceipt?: string) => Promise<string>; // Returns transaction ID
+  approveTransaction: (id: string) => Promise<void>;
+  rejectTransaction: (id: string, reason: string) => Promise<void>;
   claimBingo: (cardId: string, playerName: string) => { won: boolean; type: 'Bingo' | 'Línea' | null };
   gameConfig: GameConfig;
   updateGameConfig: (config: Partial<GameConfig>) => void;
@@ -342,6 +342,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const gameConfigRef = useRef(gameConfig);
   const pendingClaimsRef = useRef(pendingClaims);
   const hostUserRef = useRef(hostUser);
+  const pendingTransactionsRef = useRef(pendingTransactions);
 
   useEffect(() => { roleRef.current = role; }, [role]);
   useEffect(() => { drawnNumbersRef.current = drawnNumbers; }, [drawnNumbers]);
@@ -351,6 +352,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => { gameConfigRef.current = gameConfig; }, [gameConfig]);
   useEffect(() => { pendingClaimsRef.current = pendingClaims; }, [pendingClaims]);
   useEffect(() => { hostUserRef.current = hostUser; }, [hostUser]);
+  useEffect(() => { pendingTransactionsRef.current = pendingTransactions; }, [pendingTransactions]);
 
   // Audio announcer of drawn numbers
   const announceNumber = useCallback((num: number) => {
@@ -405,6 +407,32 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return [...prev, newMsg];
         });
       })
+      // Listen to new transactions (buyCards)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions', filter: `room_id=eq.${gameId}` }, (payload) => {
+        const tx = payload.new as any;
+        if (roleRef.current === 'host') {
+          const newTx: YappyTransaction = {
+            id: tx.id,
+            playerName: tx.player_name,
+            quantity: tx.quantity,
+            amount: tx.amount,
+            status: tx.status,
+            paymentReceipt: tx.payment_receipt,
+            timestamp: new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          };
+          setPendingTransactions(prev => {
+            if (prev.some(t => t.id === newTx.id)) return prev;
+            return [...prev, newTx];
+          });
+        }
+      })
+      // Listen to updated transactions (approve/reject)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'transactions', filter: `room_id=eq.${gameId}` }, (payload) => {
+        const tx = payload.new as any;
+        setPendingTransactions(prev => 
+          prev.map(t => t.id === tx.id ? { ...t, status: tx.status, rejectionReason: tx.rejection_reason } : t)
+        );
+      })
       // Listen to fast broadcast events (like drawing a number instantly before DB syncs)
       .on('broadcast', { event: 'draw-number' }, (payload) => {
         if (roleRef.current === 'player') {
@@ -416,6 +444,17 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
           setLastDrawn(num);
           setGameStatus('active');
+        }
+      })
+      .on('broadcast', { event: 'approve-tx' }, (payload) => {
+        const { id, playerName, quantity } = payload.payload;
+        // Generate local cards for the matching player tab
+        if (roleRef.current === 'player' && playerNameRef.current === playerName) {
+          const cards: BingoCard[] = [];
+          for (let i = 0; i < quantity; i++) {
+            cards.push(generateBingoCard());
+          }
+          setPlayerCards(prevCards => [...prevCards, ...cards]);
         }
       })
       .subscribe();
@@ -941,73 +980,11 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [role, gameId]);
 
-  const approveTransaction = useCallback((id: string) => {
-    setPendingTransactions(prev => 
-      prev.map(tx => {
-        if (tx.id === id && tx.status === 'pending') {
-          // If the host is approving this, generate local cards if host name matches player name (same tab simulation)
-          if (playerNameRef.current === tx.playerName) {
-            const cards: BingoCard[] = [];
-            for (let i = 0; i < tx.quantity; i++) {
-              cards.push(generateBingoCard());
-            }
-            setPlayerCards(prevCards => [...prevCards, ...cards]);
-          }
-
-          // Broadcast approval to all tabs so matching player generates cards!
-          bc.postMessage({ type: 'approve-tx', id, playerName: tx.playerName, quantity: tx.quantity });
-
-          // Send confirmation message to chat
-          setTimeout(() => {
-            const sysMsg: ChatMessage = {
-              id: `sys-app-${id}`,
-              sender: 'Yappy Pay',
-              text: `✅ Pago Aprobado. ${tx.playerName} recibió ${tx.quantity} cartón(es) digital(es).`,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              isHost: false
-            };
-            setChatMessages(c => [...c, sysMsg]);
-            bc.postMessage({ type: 'chat-message', message: sysMsg });
-          }, 100);
- 
-          return { ...tx, status: 'approved' };
-        }
-        return tx;
-      })
-    );
-  }, []);
-
-  const rejectTransaction = useCallback((id: string, reason: string) => {
-    setPendingTransactions(prev => 
-      prev.map(tx => {
-        if (tx.id === id && tx.status === 'pending') {
-          // Broadcast rejection
-          bc.postMessage({ type: 'reject-tx', id, playerName: tx.playerName, reason });
-          
-          // Chat message announcement
-          setTimeout(() => {
-            const sysMsg: ChatMessage = {
-              id: `sys-rej-${id}`,
-              sender: 'Yappy Pay',
-              text: `❌ Pago de Yappy Rechazado para ${tx.playerName}. Motivo: ${reason}`,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              isHost: true
-            };
-            setChatMessages(c => [...c, sysMsg]);
-            bc.postMessage({ type: 'chat-message', message: sysMsg });
-          }, 100);
-
-          return { ...tx, status: 'rejected', rejectionReason: reason };
-        }
-        return tx;
-      })
-    );
-  }, []);
-
   // Payment integration with Yappy QR
-  const buyCards = useCallback((quantity: number, pName: string, paymentReceipt?: string) => {
+  const buyCards = useCallback(async (quantity: number, pName: string, paymentReceipt?: string) => {
+    if (!gameId) return '';
     const txId = `YAP-${Math.floor(100000 + Math.random() * 900000)}`;
-    const amount = quantity * gameConfigRef.current.cardPrice; // Dynamic price!
+    const amount = quantity * gameConfigRef.current.cardPrice;
 
     const newTx: YappyTransaction = {
       id: txId,
@@ -1019,22 +996,115 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       paymentReceipt
     };
 
+    const { error } = await supabase.from('transactions').insert({
+      id: txId,
+      room_id: gameId,
+      player_name: pName,
+      quantity,
+      amount,
+      status: 'pending',
+      payment_receipt: paymentReceipt
+    });
+
+    if (error) {
+      console.error('Error creating transaction:', error);
+      return '';
+    }
+
     setPendingTransactions(prev => [...prev, newTx]);
-    bc.postMessage({ type: 'buy-cards', transaction: newTx });
 
     // Send a system message to chat
-    const sysMsg: ChatMessage = {
+    const sysMsgText = `💸 ${pName} solicitó ${quantity} cartón(es) ($${amount.toFixed(2)}). Comprobante de pago adjunto.`;
+    await supabase.from('chat_messages').insert({
       id: `sys-tx-${txId}`,
+      room_id: gameId,
       sender: 'Yappy Pay',
-      text: `💸 ${pName} solicitó ${quantity} cartón(es) ($${amount.toFixed(2)}). Comprobante de pago adjunto.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isHost: false
-    };
-    setChatMessages(prev => [...prev, sysMsg]);
-    bc.postMessage({ type: 'chat-message', message: sysMsg });
+      text: sysMsgText,
+      is_host: false
+    });
 
     return txId;
-  }, []);
+  }, [gameId]);
+
+  const approveTransaction = useCallback(async (id: string) => {
+    const tx = pendingTransactionsRef.current.find(t => t.id === id);
+    if (!tx || !gameId) return;
+
+    const { error } = await supabase.from('transactions').update({
+      status: 'approved'
+    }).eq('id', id);
+
+    if (error) {
+      console.error('Error approving transaction:', error);
+      return;
+    }
+
+    // Generate local cards for the player IF the player is on this tab
+    // (We also send a Realtime broadcast to trigger it for the actual player tab)
+    if (playerNameRef.current === tx.playerName) {
+      const cards: BingoCard[] = [];
+      for (let i = 0; i < tx.quantity; i++) {
+        cards.push(generateBingoCard());
+      }
+      setPlayerCards(prevCards => [...prevCards, ...cards]);
+    }
+
+    supabase.channel(`room-${gameId}`).send({
+      type: 'broadcast',
+      event: 'approve-tx',
+      payload: { id, playerName: tx.playerName, quantity: tx.quantity }
+    });
+
+    // Send confirmation message to chat
+    setTimeout(async () => {
+      await supabase.from('chat_messages').insert({
+        id: `sys-app-${id}-${Date.now()}`,
+        room_id: gameId,
+        sender: 'Yappy Pay',
+        text: `✅ Pago Aprobado. ${tx.playerName} recibió ${tx.quantity} cartón(es) digital(es).`,
+        is_host: true
+      });
+    }, 100);
+
+    setPendingTransactions(prev => 
+      prev.map(t => t.id === id ? { ...t, status: 'approved' } : t)
+    );
+  }, [gameId]);
+
+  const rejectTransaction = useCallback(async (id: string, reason: string) => {
+    const tx = pendingTransactionsRef.current.find(t => t.id === id);
+    if (!tx || !gameId) return;
+
+    const { error } = await supabase.from('transactions').update({
+      status: 'rejected',
+      rejection_reason: reason
+    }).eq('id', id);
+
+    if (error) {
+      console.error('Error rejecting transaction:', error);
+      return;
+    }
+
+    supabase.channel(`room-${gameId}`).send({
+      type: 'broadcast',
+      event: 'reject-tx',
+      payload: { id, playerName: tx.playerName, reason }
+    });
+
+    setTimeout(async () => {
+      await supabase.from('chat_messages').insert({
+        id: `sys-rej-${id}-${Date.now()}`,
+        room_id: gameId,
+        sender: 'Yappy Pay',
+        text: `❌ Pago de Yappy Rechazado para ${tx.playerName}. Motivo: ${reason}`,
+        is_host: true
+      });
+    }, 100);
+
+    setPendingTransactions(prev => 
+      prev.map(t => t.id === id ? { ...t, status: 'rejected', rejectionReason: reason } : t)
+    );
+  }, [gameId]);
 
   // Validation algorithms for Lines (horiz, vert, diag) and full Bingo (25 markings)
   const claimBingo = useCallback((cardId: string, pName: string) => {
