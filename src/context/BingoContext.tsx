@@ -499,13 +499,11 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       .on('broadcast', { event: 'stream-audio' }, (payload) => {
         if (roleRef.current === 'player') {
           try {
-            const base64 = payload.payload.audioChunk;
-            const buffer = base64ToArrayBuffer(base64);
             const audioBc = new BroadcastChannel('bingo-kno-audio-channel');
-            audioBc.postMessage({ audioChunk: buffer });
+            audioBc.postMessage(payload.payload);
             audioBc.close();
           } catch (err) {
-            console.error('Error decoding/playing streaming audio chunk:', err);
+            console.error('Error forwarding stream-audio payload:', err);
           }
         }
       })
@@ -1804,16 +1802,6 @@ export const useBingo = () => {
 };
 
 // Utilities for converting binary ArrayBuffer to/from base64 for network transmission
-
-const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
-  const binaryString = window.atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes.buffer;
-};
 
 // Chime sound for incoming chat messages (3-note ascending pattern, louder)
 const playChatBeep = () => {

@@ -282,51 +282,83 @@ export const HostView: React.FC = () => {
     }
   }, [stream]);
 
-  // ── Broadcast audio tracks in real-time ──
+  // ── Broadcast audio tracks in real-time using Raw PCM Web Audio API ──
   useEffect(() => {
     if (!isStreaming || !stream || stream.getAudioTracks().length === 0) return;
 
     const audioBc = new BroadcastChannel('bingo-kno-audio-channel');
-    const audioStream = new MediaStream(stream.getAudioTracks());
     
-    let options = {};
-    if (typeof MediaRecorder !== 'undefined') {
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-        options = { mimeType: 'audio/webm;codecs=opus' };
-      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        options = { mimeType: 'audio/mp4' };
-      }
+    // Set up AudioContext to capture microphone
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) {
+      console.warn('AudioContext not supported on this browser');
+      return;
     }
 
-    let mediaRecorder: MediaRecorder | null = null;
+    let audioCtx: AudioContext | null = null;
+    let source: MediaStreamAudioSourceNode | null = null;
+    let processor: ScriptProcessorNode | null = null;
+
     try {
-      mediaRecorder = new MediaRecorder(audioStream, options);
-      mediaRecorder.ondataavailable = async (e) => {
-        if (e.data && e.data.size > 0) {
-          const buffer = await e.data.arrayBuffer();
-          audioBc.postMessage({ audioChunk: buffer });
+      audioCtx = new AudioCtx();
+      
+      // Mono capture stream
+      const audioStream = new MediaStream(stream.getAudioTracks());
+      source = audioCtx.createMediaStreamSource(audioStream);
+      
+      // ScriptProcessorNode(bufferSize, inputChannels, outputChannels)
+      // 4096 samples at 44.1kHz is ~93ms chunks
+      processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      
+      processor.onaudioprocess = (e) => {
+        if (!audioCtx) return;
+        const inputData = e.inputBuffer.getChannelData(0); // Mono channel
+        const len = inputData.length;
+        
+        // Convert Float32 samples [-1.0, 1.0] to Int16Array
+        const pcm16 = new Int16Array(len);
+        for (let i = 0; i < len; i++) {
+          const s = Math.max(-1, Math.min(1, inputData[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+
+        // Convert Int16Array buffer to base64
+        try {
+          const base64Audio = arrayBufferToBase64(pcm16.buffer);
+          const payload = { rawPcm: base64Audio, sampleRate: audioCtx.sampleRate };
           
-          // Also broadcast remote audio over Supabase Realtime
-          try {
-            const base64Audio = arrayBufferToBase64(buffer);
-            supabase.channel(`room-${gameId}`).send({
-              type: 'broadcast',
-              event: 'stream-audio',
-              payload: { audioChunk: base64Audio }
-            }).catch(() => {});
-          } catch (err) {
-            console.error('Error broadcasting audio chunk over Supabase:', err);
-          }
+          // Post to local BroadcastChannel
+          audioBc.postMessage(payload);
+          
+          // Broadcast to remote players over Supabase Realtime
+          supabase.channel(`room-${gameId}`).send({
+            type: 'broadcast',
+            event: 'stream-audio',
+            payload: payload
+          }).catch(() => {});
+        } catch (err) {
+          console.error('Error processing audio chunk:', err);
         }
       };
-      mediaRecorder.start(200); // 200ms chunks
+
+      // Connect nodes
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
     } catch (err) {
-      console.error('Error starting MediaRecorder:', err);
+      console.error('Error setting up Web Audio API processor:', err);
     }
 
     return () => {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+      try {
+        if (processor && source) {
+          source.disconnect(processor);
+          processor.disconnect();
+        }
+        if (audioCtx) {
+          audioCtx.close();
+        }
+      } catch (err) {
+        console.error('Error cleaning up audio nodes:', err);
       }
       audioBc.close();
     };

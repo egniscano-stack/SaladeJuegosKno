@@ -6,6 +6,15 @@ import {
   Volume2, VolumeX
 } from 'lucide-react';
 
+const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+  const binaryString = window.atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+};
 
 export const PlayerView: React.FC = () => {
   const {
@@ -156,86 +165,100 @@ export const PlayerView: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  // Live audio streaming refs & state
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const mediaSourceRef = useRef<MediaSource | null>(null);
-  const sourceBufferRef = useRef<SourceBuffer | null>(null);
-  const queueRef = useRef<ArrayBuffer[]>([]);
-  const [isMuted, setIsMuted] = useState(false);
+  // Live audio streaming using Raw PCM Web Audio API
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const nextPlayTimeRef = useRef<number>(0);
+  
+  const [isMuted, setIsMuted] = useState(true); // Default to muted for browser autoplay compliance
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const isMutedRef = useRef(true);
 
-  // Manage muting / unmuting and playback initialization
+  // Keep isMutedRef in sync with isMuted state
   useEffect(() => {
-    if (isMuted) {
-      if (audioRef.current) audioRef.current.muted = true;
-      return;
-    }
-    if (audioRef.current) {
-      audioRef.current.muted = false;
-      audioRef.current.play().catch(err => console.log('Autoplay audio wait:', err));
+    isMutedRef.current = isMuted;
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = isMuted ? 0 : 1;
     }
   }, [isMuted]);
 
-  // Set up WebM/MP4 MSE audio chunk streaming via BroadcastChannel
+  // Create / unlock AudioContext on user interaction
+  const unlockAudio = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+
+      if (!audioContextRef.current) {
+        const ctx = new AudioCtx();
+        const gainNode = ctx.createGain();
+        gainNode.connect(ctx.destination);
+        gainNode.gain.value = isMuted ? 0 : 1;
+        
+        audioContextRef.current = ctx;
+        gainNodeRef.current = gainNode;
+        nextPlayTimeRef.current = 0;
+      }
+
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      setIsMuted(false); // Unmute immediately when activated
+      setAudioUnlocked(true);
+    } catch (err) {
+      console.error('Error unlocking audio context:', err);
+    }
+  };
+
+  // Listen to raw PCM chunks via BroadcastChannel
   useEffect(() => {
-    const audio = document.createElement('audio');
-    audio.autoplay = true;
-    audioRef.current = audio;
-    document.body.appendChild(audio);
-
-    if (typeof window === 'undefined' || !window.MediaSource) {
-      console.warn('MediaSource API no está soportada en este navegador.');
-      return;
-    }
-
-    const ms = new MediaSource();
-    mediaSourceRef.current = ms;
-    audio.src = URL.createObjectURL(ms);
-
-    let mimeType = 'audio/webm; codecs="opus"';
-    if (typeof MediaRecorder !== 'undefined') {
-      if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus') && MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4';
-      }
-    }
-
-    ms.addEventListener('sourceopen', () => {
-      try {
-        const sb = ms.addSourceBuffer(mimeType);
-        sourceBufferRef.current = sb;
-
-        sb.addEventListener('updateend', () => {
-          if (queueRef.current.length > 0 && !sb.updating) {
-            const next = queueRef.current.shift();
-            if (next) sb.appendBuffer(next);
-          }
-        });
-      } catch (err) {
-        console.error('Error adding SourceBuffer:', err);
-      }
-    });
-
     const audioBc = new BroadcastChannel('bingo-kno-audio-channel');
-    
+
     const handleAudioMessage = (e: MessageEvent) => {
-      const chunk = e.data?.audioChunk;
-      if (!chunk) return;
+      const { rawPcm, sampleRate } = e.data || {};
+      if (!rawPcm || !sampleRate) return;
 
-      const sb = sourceBufferRef.current;
-      if (sb) {
-        if (!sb.updating && queueRef.current.length === 0) {
-          try {
-            sb.appendBuffer(chunk);
-          } catch (err) {
-            console.error('Error appending buffer directly:', err);
-          }
+      if (isMutedRef.current) return;
+      if (!audioContextRef.current) return;
+
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') return;
+
+      try {
+        const buffer = base64ToArrayBuffer(rawPcm);
+        const pcm16 = new Int16Array(buffer);
+        const len = pcm16.length;
+
+        const f32 = new Float32Array(len);
+        for (let i = 0; i < len; i++) {
+          const s = pcm16[i];
+          f32[i] = s / (s < 0 ? 0x8000 : 0x7FFF);
+        }
+
+        const audioBuffer = ctx.createBuffer(1, len, sampleRate);
+        audioBuffer.copyToChannel(f32, 0);
+
+        const currentTime = ctx.currentTime;
+        let startTime = nextPlayTimeRef.current;
+
+        if (startTime < currentTime) {
+          startTime = currentTime + 0.05; // 50ms scheduling buffer
+        }
+
+        const duration = len / sampleRate;
+        nextPlayTimeRef.current = startTime + duration;
+
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        if (gainNodeRef.current) {
+          source.connect(gainNodeRef.current);
         } else {
-          queueRef.current.push(chunk);
+          source.connect(ctx.destination);
         }
 
-        // Try playing if paused (handles user gesture autoplay resumption)
-        if (audio.paused && !isMuted) {
-          audio.play().catch(() => {});
-        }
+        source.start(startTime);
+      } catch (err) {
+        console.error('Error scheduling raw PCM chunk:', err);
       }
     };
 
@@ -244,11 +267,13 @@ export const PlayerView: React.FC = () => {
     return () => {
       audioBc.removeEventListener('message', handleAudioMessage);
       audioBc.close();
-      audio.pause();
-      if (audio.parentNode) {
-        document.body.removeChild(audio);
+      if (audioContextRef.current) {
+        try {
+          audioContextRef.current.close();
+        } catch (err) {}
+        audioContextRef.current = null;
+        gainNodeRef.current = null;
       }
-      audioRef.current = null;
     };
   }, []);
 
@@ -674,7 +699,31 @@ export const PlayerView: React.FC = () => {
                 <Tv size={14} className="text-violet-400" /> Transmisión en Vivo
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {isStreaming && (
+                {isStreaming && !audioUnlocked && (
+                  <button
+                    onClick={() => unlockAudio()}
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(16,185,129,0.25), rgba(5,150,105,0.15))',
+                      border: '1px solid rgba(16,185,129,0.5)',
+                      borderRadius: '4px',
+                      color: '#34d399',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0.25rem 0.5rem',
+                      fontSize: '0.65rem',
+                      fontWeight: 'bold',
+                      gap: '0.25rem',
+                      animation: 'pulse 2s infinite',
+                      outline: 'none'
+                    }}
+                    title="Activar audio de la transmisión"
+                  >
+                    🔊 Activar Audio
+                  </button>
+                )}
+                {isStreaming && audioUnlocked && (
                   <button
                     onClick={() => setIsMuted(!isMuted)}
                     style={{
