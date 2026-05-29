@@ -71,19 +71,24 @@ export const SuperAdminView: React.FC = () => {
   };
 
   const grantDemo = async (hostId: string) => {
-    const daysStr = prompt('¿Cuántos días de Demo deseas otorgar?', '3');
-    if (!daysStr) return;
+    const daysStr = prompt('¿Cuántos días de Demo deseas otorgar? (Ingresa 0 para denegar/suspender)', '3');
+    if (daysStr === null) return;
     const days = parseInt(daysStr, 10);
-    if (isNaN(days) || days <= 0) {
+    if (isNaN(days) || days < 0) {
       alert('Número de días inválido');
       return;
     }
-    const d = new Date();
-    d.setDate(d.getDate() + days);
-    await supabase.from('host_profiles').update({ 
-      status: 'demo', 
-      subscription_end_date: d.toISOString() 
-    }).eq('id', hostId);
+
+    if (days === 0) {
+      await supabase.from('host_profiles').update({ status: 'suspended' }).eq('id', hostId);
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      await supabase.from('host_profiles').update({ 
+        status: 'demo', 
+        subscription_end_date: d.toISOString() 
+      }).eq('id', hostId);
+    }
     loadData();
   };
 
