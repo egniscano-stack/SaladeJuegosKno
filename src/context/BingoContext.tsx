@@ -96,6 +96,8 @@ interface BingoContextType {
   setVoiceEnabled: (enabled: boolean) => void;
   isStreaming: boolean;
   setIsStreaming: (streaming: boolean) => void;
+  streamFrame: string | null;
+  setStreamFrame: (frame: string | null) => void;
   playerName: string;
   setPlayerName: (name: string) => void;
   
@@ -254,6 +256,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [pendingTransactions, setPendingTransactions] = useState<YappyTransaction[]>([]);
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
   const [isStreaming, setIsStreamingState] = useState<boolean>(false);
+  const [streamFrame, setStreamFrame] = useState<string | null>(null);
   
   // Host user authentication state
   const [hostUser, setHostUser] = useState<string | null>(() => sessionStorage.getItem('bingo_hostUser') || null);
@@ -290,6 +293,13 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setIsStreaming = useCallback((streaming: boolean) => {
     setIsStreamingState(streaming);
     bc.postMessage({ type: streaming ? 'stream-start' : 'stream-stop' });
+    if (gameIdRef.current) {
+      supabase.channel(`room-${gameIdRef.current}`).send({
+        type: 'broadcast',
+        event: 'stream-state',
+        payload: { isStreaming: streaming }
+      });
+    }
   }, []);
   
   // Local Player name synced in context
@@ -437,6 +447,39 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setPlayerCards(prevCards => [...prevCards, ...cards]);
         }
       })
+      .on('broadcast', { event: 'stream-state' }, (payload) => {
+        setIsStreamingState(payload.payload.isStreaming);
+        if (!payload.payload.isStreaming) {
+          setStreamFrame(null);
+        }
+      })
+      .on('broadcast', { event: 'request-stream-state' }, () => {
+        if (roleRef.current === 'host') {
+          supabase.channel(`room-${gameId}`).send({
+            type: 'broadcast',
+            event: 'stream-state',
+            payload: { isStreaming: isStreamingRef.current }
+          });
+        }
+      })
+      .on('broadcast', { event: 'stream-frame' }, (payload) => {
+        if (roleRef.current === 'player') {
+          setStreamFrame(payload.payload.frame);
+        }
+      })
+      .on('broadcast', { event: 'stream-audio' }, (payload) => {
+        if (roleRef.current === 'player') {
+          try {
+            const base64 = payload.payload.audioChunk;
+            const buffer = base64ToArrayBuffer(base64);
+            const audioBc = new BroadcastChannel('bingo-kno-audio-channel');
+            audioBc.postMessage({ audioChunk: buffer });
+            audioBc.close();
+          } catch (err) {
+            console.error('Error decoding/playing streaming audio chunk:', err);
+          }
+        }
+      })
       // Listen to new claims
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'claims', filter: `room_id=eq.${gameId}` }, (payload) => {
         const claim = payload.new as any;
@@ -493,7 +536,17 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           })
         );
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          if (roleRef.current === 'player') {
+            supabase.channel(`room-${gameId}`).send({
+              type: 'broadcast',
+              event: 'request-stream-state',
+              payload: {}
+            });
+          }
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -543,6 +596,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           break;
         case 'stream-stop':
           setIsStreamingState(false);
+          setStreamFrame(null);
           break;
         case 'draw-number':
           setDrawnNumbers(prev => {
@@ -672,6 +726,19 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       bc.removeEventListener('message', handleSyncMessage);
     };
   }, [announceNumber]);
+
+  // Listen to local BroadcastChannel for HD frames (cross-tab local communication)
+  useEffect(() => {
+    const streamBc = new BroadcastChannel('bingo-kno-stream-channel');
+    const handleStreamFrame = (e: MessageEvent) => {
+      setStreamFrame(e.data?.frame ?? null);
+    };
+    streamBc.addEventListener('message', handleStreamFrame);
+    return () => {
+      streamBc.removeEventListener('message', handleStreamFrame);
+      streamBc.close();
+    };
+  }, []);
 
   useEffect(() => {
     if (gameId) {
@@ -1658,6 +1725,8 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setVoiceEnabled,
       isStreaming,
       setIsStreaming,
+      streamFrame,
+      setStreamFrame,
       playerName,
       setPlayerName,
       
@@ -1703,4 +1772,16 @@ export const useBingo = () => {
     throw new Error('useBingo must be used within a BingoProvider');
   }
   return context;
+};
+
+// Utilities for converting binary ArrayBuffer to/from base64 for network transmission
+
+const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+  const binaryString = window.atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
 };

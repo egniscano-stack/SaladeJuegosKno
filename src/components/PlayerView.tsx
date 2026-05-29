@@ -25,7 +25,8 @@ export const PlayerView: React.FC = () => {
     submitClaim,
     pendingClaims,
     submitPayoutDetails,
-    sendPayoutChatMessage
+    sendPayoutChatMessage,
+    streamFrame
   } = useBingo();
 
   const winningCard = playerCards.find(c => c.isWinner);
@@ -35,7 +36,6 @@ export const PlayerView: React.FC = () => {
   const [showQrModal, setShowQrModal] = useState(false);
   const [localMarked, setLocalMarked] = useState<Record<string, boolean[][]>>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [streamFrame, setStreamFrame] = useState<string | null>(null);
   // Animated ball state
   const [animatedBall, setAnimatedBall] = useState<number | null>(null);
   const [showBallAnim, setShowBallAnim] = useState(false);
@@ -207,14 +207,7 @@ export const PlayerView: React.FC = () => {
     syncBc.close();
   }, []);
 
-  // Receive LIVE stream frames from host
-  useEffect(() => {
-    const bc = new BroadcastChannel('bingo-kno-stream-channel');
-    bc.addEventListener('message', (e: MessageEvent) => {
-      setStreamFrame(e.data?.frame ?? null);
-    });
-    return () => { bc.close(); };
-  }, []);
+  // Receive LIVE stream frames from host (handled globally in BingoContext, local hook removed)
 
   // Manage muting / unmuting and playback initialization
   useEffect(() => {

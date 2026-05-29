@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useBingo, YappyTransaction } from '../context/BingoContext';
 import { RotateCcw, Copy, Check, UserCheck, Zap, Video, VideoOff, Award } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 
 export const HostView: React.FC = () => {
   const {
@@ -304,6 +305,18 @@ export const HostView: React.FC = () => {
         if (e.data && e.data.size > 0) {
           const buffer = await e.data.arrayBuffer();
           audioBc.postMessage({ audioChunk: buffer });
+          
+          // Also broadcast remote audio over Supabase Realtime
+          try {
+            const base64Audio = arrayBufferToBase64(buffer);
+            supabase.channel(`room-${gameId}`).send({
+              type: 'broadcast',
+              event: 'stream-audio',
+              payload: { audioChunk: base64Audio }
+            }).catch(() => {});
+          } catch (err) {
+            console.error('Error broadcasting audio chunk over Supabase:', err);
+          }
         }
       };
       mediaRecorder.start(200); // 200ms chunks
@@ -456,6 +469,23 @@ export const HostView: React.FC = () => {
       }
 
       bc.postMessage({ frame: canvas.toDataURL('image/jpeg', 0.88) });
+
+      // Broadcast highly compressed small frame to Supabase Realtime for remote players at ~1.5 FPS
+      if (frameCount % 8 === 0) {
+        const sbCanvas = document.createElement('canvas');
+        sbCanvas.width = 480;
+        sbCanvas.height = 270;
+        const sbCtx = sbCanvas.getContext('2d');
+        if (sbCtx) {
+          sbCtx.drawImage(canvas, 0, 0, 480, 270);
+          const base64Comp = sbCanvas.toDataURL('image/jpeg', 0.4);
+          supabase.channel(`room-${gameId}`).send({
+            type: 'broadcast',
+            event: 'stream-frame',
+            payload: { frame: base64Comp }
+          }).catch(e => console.error('Error broadcasting stream frame:', e));
+        }
+      }
     }, 80); // ~12 FPS broadcast
 
     return () => { clearInterval(interval); bc.postMessage({ frame: null }); bc.close(); };
@@ -1762,4 +1792,15 @@ export const HostView: React.FC = () => {
       {toastMessage && <div className="toast-notification">{toastMessage}</div>}
     </div>
   );
+};
+
+// Helper utility to convert ArrayBuffer to Base64 in HostView
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
 };
