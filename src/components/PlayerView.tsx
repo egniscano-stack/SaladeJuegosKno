@@ -474,7 +474,7 @@ export const PlayerView: React.FC = () => {
           </strong>
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)' }}>
-          💸 Precio Cartón: <strong style={{ color: 'white', marginLeft: '0.15rem' }}>${gameConfig.cardPrice.toFixed(2)} USD</strong>
+          💸 Precio Cartón: <strong style={{ color: 'white', marginLeft: '0.15rem' }}>${(Number(gameConfig.cardPrice) || 0).toFixed(2)} USD</strong>
         </span>
       </div>
 
@@ -798,7 +798,7 @@ export const PlayerView: React.FC = () => {
                   <div>
                     <h4 style={{ fontSize: '1rem', fontWeight: 'bold', color: 'white' }}>¡Adquiere tus Cartones!</h4>
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: '280px', margin: '0.2rem auto 0 auto' }}>
-                      Cada cartón digital es único y cuesta solo <strong>${gameConfig.cardPrice.toFixed(2)} Yappy</strong>. Paga de forma segura.
+                      Cada cartón digital es único y cuesta solo <strong>${(Number(gameConfig.cardPrice) || 0).toFixed(2)} Yappy</strong>. Paga de forma segura.
                     </p>
                   </div>
  
@@ -1028,7 +1028,7 @@ export const PlayerView: React.FC = () => {
                   </div>
                 )}
                 <p style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginTop: '0.5rem', marginBottom: 0 }}>
-                  Monto: ${(quantity * gameConfig.cardPrice).toFixed(2)} USD
+                  Monto: ${(quantity * (Number(gameConfig.cardPrice) || 0)).toFixed(2)} USD
                 </p>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginTop: '0.1rem', marginBottom: 0 }}>
                   Referencia temporal: {purchaseTxId}

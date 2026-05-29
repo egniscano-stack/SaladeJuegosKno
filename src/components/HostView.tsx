@@ -845,7 +845,7 @@ export const HostView: React.FC = () => {
                   min="0.5"
                   step="0.5"
                   value={gameConfig.cardPrice}
-                  onChange={(e) => updateGameConfig({ cardPrice: parseFloat(e.target.value) || 2 })}
+                  onChange={(e) => updateGameConfig({ cardPrice: e.target.value === '' ? '' : parseFloat(e.target.value) })}
                   style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '0.75rem', padding: '0.3rem 0.5rem', color: 'white', outline: 'none', width: '100%' }}
                 />
               </div>
@@ -1533,7 +1533,7 @@ export const HostView: React.FC = () => {
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Desglose de Monto:</span>
                     <p style={{ margin: '0.1rem 0 0 0', fontWeight: 'bold', color: 'var(--accent-gold)', fontSize: '0.9rem' }}>
-                      {activeAuditTx.quantity} cartón(es) × ${gameConfig.cardPrice.toFixed(2)}
+                      {activeAuditTx.quantity} cartón(es) × ${(Number(gameConfig.cardPrice) || 0).toFixed(2)}
                     </p>
                   </div>
                   <div>

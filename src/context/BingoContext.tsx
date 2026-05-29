@@ -31,7 +31,7 @@ export interface YappyTransaction {
 
 export interface GameConfig {
   gameName: string;
-  cardPrice: number;
+  cardPrice: number | '';
   paymentDetails: string;
   winningMechanic: 'line' | 'full' | 'cajon' | 'terna';
   customLogo: string | null;
@@ -332,7 +332,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [gameConfig, setGameConfigState] = useState<GameConfig>({
     gameName: 'Bingo-KNO',
-    cardPrice: 2,
+    cardPrice: '',
     paymentDetails: 'Yappy Panamá: @bingokno / Banco General',
     winningMechanic: 'full',
     customLogo: null,
@@ -795,7 +795,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const initialConfig: GameConfig = {
         gameName: 'Mi Gran Bingo',
-        cardPrice: 2,
+        cardPrice: '',
         paymentDetails: 'Yappy Panamá: @bingokno / Banco General',
         winningMechanic: 'full',
         customLogo: null,
@@ -1214,7 +1214,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const buyCards = useCallback(async (quantity: number, pName: string, paymentReceipt?: string) => {
     if (!gameId) return '';
     const txId = `YAP-${Math.floor(100000 + Math.random() * 900000)}`;
-    const amount = quantity * gameConfigRef.current.cardPrice;
+    const amount = quantity * (Number(gameConfigRef.current.cardPrice) || 0);
 
     const newTx: YappyTransaction = {
       id: txId,
