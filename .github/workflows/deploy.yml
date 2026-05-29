@@ -11,6 +11,9 @@ jobs:
     name: Compilar y publicar en rama production
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: 📥 Checkout del código
         uses: actions/checkout@v4
@@ -26,8 +29,8 @@ jobs:
 
       - name: 🔨 Compilar la aplicación
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: https://uzoilsngvppytnhtmouo.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6b2lsc25ndnBweXRuaHRtb3VvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwMjMyMzMsImV4cCI6MjA5NTU5OTIzM30.XsxmTf-hLj_yrq-88e9_pJwJh2NnDkETImDjSBfapsk
         run: npm run build
 
       - name: 🌿 Publicar dist/ en rama production
