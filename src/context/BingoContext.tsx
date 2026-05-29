@@ -343,6 +343,8 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const pendingClaimsRef = useRef(pendingClaims);
   const hostUserRef = useRef(hostUser);
   const pendingTransactionsRef = useRef(pendingTransactions);
+  const gameIdRef = useRef(gameId);
+  const updateConfigTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => { roleRef.current = role; }, [role]);
   useEffect(() => { drawnNumbersRef.current = drawnNumbers; }, [drawnNumbers]);
@@ -353,6 +355,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => { pendingClaimsRef.current = pendingClaims; }, [pendingClaims]);
   useEffect(() => { hostUserRef.current = hostUser; }, [hostUser]);
   useEffect(() => { pendingTransactionsRef.current = pendingTransactions; }, [pendingTransactions]);
+  useEffect(() => { gameIdRef.current = gameId; }, [gameId]);
 
   // Audio announcer of drawn numbers
   const announceNumber = useCallback((num: number) => {
@@ -969,13 +972,35 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return num;
   }, [drawnNumbers, announceNumber, gameId]);
 
-  const resetGame = useCallback(() => {
+  const resetGame = useCallback(async () => {
+    if (!gameId) return;
+
+    // Reset room state
+    await supabase.from('rooms').update({
+      drawn_numbers: [],
+      game_status: 'idle'
+    }).eq('id', gameId);
+
+    // Clear related data for the room
+    await supabase.from('chat_messages').delete().eq('room_id', gameId);
+    await supabase.from('transactions').delete().eq('room_id', gameId);
+    await supabase.from('claims').delete().eq('room_id', gameId);
+
     setDrawnNumbers([]);
     setLastDrawn(null);
     setGameStatus('idle');
     setChatMessages([]);
+    setPendingTransactions([]);
+    setPendingClaims([]);
+
+    supabase.channel(`room-${gameId}`).send({
+      type: 'broadcast',
+      event: 'reset-game',
+      payload: {}
+    });
+
     bc.postMessage({ type: 'reset-game' });
-  }, []);
+  }, [gameId]);
 
   const sendChatMessage = useCallback(async (text: string, senderName?: string) => {
     if (!text.trim() || !gameId) return;
@@ -1266,6 +1291,23 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setGameConfigState(prev => {
       const updated = { ...prev, ...newConfig };
       bc.postMessage({ type: 'update-config', config: updated });
+      
+      if (gameIdRef.current) {
+        if (updateConfigTimeoutRef.current) clearTimeout(updateConfigTimeoutRef.current);
+        updateConfigTimeoutRef.current = setTimeout(async () => {
+          await supabase.from('rooms').update({
+            game_name: updated.gameName,
+            card_price: updated.cardPrice,
+            payment_details: updated.paymentDetails,
+            winning_mechanic: updated.winningMechanic,
+            custom_logo: updated.customLogo,
+            qr_code: updated.qrCode,
+            payout_amount: updated.payoutAmount,
+            start_date: updated.startDate,
+            start_time: updated.startTime
+          }).eq('id', gameIdRef.current);
+        }, 1000);
+      }
       
       // Persist to localStorage under hostUser profile
       if (hostUserRef.current) {
