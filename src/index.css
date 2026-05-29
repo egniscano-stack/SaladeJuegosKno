@@ -98,7 +98,7 @@ h1, h2, h3, h4, h5, h6 {
   z-index: 100;
   min-height: 56px;
   max-height: 64px;
-  overflow: hidden;
+  overflow: visible;
   gap: 0.5rem;
   flex-wrap: nowrap;
 }

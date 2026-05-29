@@ -235,6 +235,11 @@ export const PlayerView: React.FC = () => {
     audioRef.current = audio;
     document.body.appendChild(audio);
 
+    if (typeof window === 'undefined' || !window.MediaSource) {
+      console.warn('MediaSource API no está soportada en este navegador (ej. iOS Safari). El audio en vivo no funcionará.');
+      return;
+    }
+
     const ms = new MediaSource();
     mediaSourceRef.current = ms;
     audio.src = URL.createObjectURL(ms);
