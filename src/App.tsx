@@ -22,10 +22,12 @@ const BingoAppContent: React.FC = () => {
     hostLogout,
     superAdminUser,
     superAdminLogin,
+    superAdminRegister,
     superAdminLogout
   } = useBingo();
 
   const [hostAuthMode, setHostAuthMode] = useState<'none' | 'login' | 'register'>('none');
+  const [superAdminAuthMode, setSuperAdminAuthMode] = useState<'login' | 'register'>('login');
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -348,7 +350,12 @@ const BingoAppContent: React.FC = () => {
 
             <form onSubmit={async (e) => {
               e.preventDefault();
-              const res = await superAdminLogin(authUsername, authPassword);
+              let res;
+              if (superAdminAuthMode === 'register') {
+                res = await superAdminRegister(authUsername, authPassword);
+              } else {
+                res = await superAdminLogin(authUsername, authPassword);
+              }
               if (res.success) {
                 // Role is set to 'superadmin' inside context
               } else {
@@ -372,9 +379,17 @@ const BingoAppContent: React.FC = () => {
               </div>
 
               <button className="btn-primary" type="submit" style={{ width: '100%', padding: '0.6rem', fontSize: '0.85rem', fontWeight: 'bold', justifyContent: 'center', marginTop: '0.5rem', background: '#ef4444', borderColor: '#b91c1c' }}>
-                <LogIn size={16} /> Autenticar
+                {superAdminAuthMode === 'register' ? <><PlusCircle size={16} /> Registrar Super Admin</> : <><LogIn size={16} /> Autenticar</>}
               </button>
             </form>
+
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center', marginTop: '0.5rem' }}>
+              {superAdminAuthMode === 'login' ? (
+                <>¿No hay cuentas? <span onClick={() => { setSuperAdminAuthMode('register'); setAuthError(''); }} style={{ color: '#ef4444', cursor: 'pointer', fontWeight: 'bold', textDecoration: 'underline' }}>Regístrate como Dios</span></>
+              ) : (
+                <>¿Ya eres Dios? <span onClick={() => { setSuperAdminAuthMode('login'); setAuthError(''); }} style={{ color: '#ef4444', cursor: 'pointer', fontWeight: 'bold', textDecoration: 'underline' }}>Inicia Sesión</span></>
+              )}
+            </div>
           </div>
         </main>
       )}

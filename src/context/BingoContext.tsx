@@ -107,6 +107,7 @@ interface BingoContextType {
   hostLogout: () => Promise<void>;
   
   superAdminUser: string | null;
+  superAdminRegister: (user: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   superAdminLogin: (user: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   superAdminLogout: () => Promise<void>;
   
@@ -851,6 +852,45 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setHostProfile(null);
     setRole('select');
     setGameId('');
+  }, []);
+
+  const superAdminRegister = useCallback(async (user: string, pass: string) => {
+    try {
+      const username = user.trim().toLowerCase();
+      if (!username || !pass.trim()) {
+        return { success: false, error: 'Por favor completa todos los campos.' };
+      }
+
+      const email = `${username}@superadmin.local`;
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: pass,
+      });
+
+      if (error) {
+        if (error.message.includes('already registered')) {
+          return { success: false, error: 'El superadmin ya existe.' };
+        }
+        return { success: false, error: error.message };
+      }
+
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('super_admins')
+          .insert({ id: data.user.id, username });
+          
+        if (profileError) {
+           console.error('Error creating super admin profile:', profileError);
+           return { success: false, error: 'Error interno guardando perfil.' };
+        }
+      }
+
+      setSuperAdminUser(username);
+      setRole('superadmin');
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: 'Error inesperado al registrar el super admin.' };
+    }
   }, []);
 
   const superAdminLogin = useCallback(async (user: string, pass: string) => {
@@ -1661,6 +1701,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       hostLogout,
       
       superAdminUser,
+      superAdminRegister,
       superAdminLogin,
       superAdminLogout,
       
