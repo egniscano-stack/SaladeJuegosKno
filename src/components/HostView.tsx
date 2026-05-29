@@ -24,7 +24,7 @@ export const HostView: React.FC = () => {
     sendPayoutChatMessage,
     completePayout,
     hostProfile,
-    hostUser
+    regenerateRoom
   } = useBingo();
 
   const [copied, setCopied]             = useState(false);
@@ -146,12 +146,6 @@ export const HostView: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleCopyLink = () => {
-    const url = `${window.location.origin}${window.location.pathname}?room=${gameId}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   // If subscription is blocked, show payment overlay and stop normal render
   if (isExpired) {

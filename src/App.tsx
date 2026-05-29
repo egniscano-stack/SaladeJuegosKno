@@ -20,10 +20,8 @@ const BingoAppContent: React.FC = () => {
     hostRegister,
     hostLogin,
     hostLogout,
-    superAdminUser,
     superAdminLogin,
     superAdminRegister,
-    superAdminLogout,
     leaveGame
   } = useBingo();
 
@@ -36,7 +34,7 @@ const BingoAppContent: React.FC = () => {
   const [authError, setAuthError] = useState('');
 
   // Easter egg for Super Admin Login
-  const [logoClicks, setLogoClicks] = useState(0);
+  const [, setLogoClicks] = useState(0);
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleLogoClick = () => {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useBingo } from '../context/BingoContext';
 import { supabase } from '../lib/supabaseClient';
-import { LogOut, Users, Settings, Activity, CheckCircle, XCircle, Trash2, Gift, CreditCard } from 'lucide-react';
+import { LogOut, Users, Settings, CheckCircle, XCircle, Trash2, Gift, CreditCard } from 'lucide-react';
 
 interface HostProfile {
   id: string;

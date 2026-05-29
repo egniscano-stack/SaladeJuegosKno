@@ -138,106 +138,6 @@ const BingoContext = createContext<BingoContextType | undefined>(undefined);
 // Initialize BroadcastChannel for cross-tab local communication!
 const bc = new BroadcastChannel('bingo-kno-sync-channel');
 
-const checkWinningPattern = (
-  matrix: (number | null)[][],
-  marked: boolean[][],
-  drawnNumbers: number[],
-  mechanic: 'line' | 'full' | 'cajon' | 'terna'
-): boolean => {
-  const isNumberValid = (val: number | null) => {
-    if (val === null) return true; // Free space is always drawn
-    return drawnNumbers.includes(val);
-  };
-
-  if (mechanic === 'full') {
-    // All 24 cells (excluding center) must be drawn AND marked
-    let completed = true;
-    for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < 5; c++) {
-        if (r === 2 && c === 2) continue;
-        const val = matrix[r][c];
-        if (!isNumberValid(val) || !marked[r][c]) {
-          completed = false;
-          break;
-        }
-      }
-      if (!completed) break;
-    }
-    return completed;
-  }
-
-  if (mechanic === 'cajon') {
-    // Outer perimeter (row 0, row 4, col 0, col 4) must be drawn AND marked
-    let completed = true;
-    for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < 5; c++) {
-        if (r === 0 || r === 4 || c === 0 || c === 4) {
-          const val = matrix[r][c];
-          if (!isNumberValid(val) || !marked[r][c]) {
-            completed = false;
-            break;
-          }
-        }
-      }
-      if (!completed) break;
-    }
-    return completed;
-  }
-
-  if (mechanic === 'terna') {
-    // At least one horizontal row must have at least 3 numbers drawn AND marked
-    for (let r = 0; r < 5; r++) {
-      let count = 0;
-      for (let c = 0; c < 5; c++) {
-        const val = matrix[r][c];
-        if (isNumberValid(val) && marked[r][c]) {
-          count++;
-        }
-      }
-      if (count >= 3) return true;
-    }
-    return false;
-  }
-
-  if (mechanic === 'line') {
-    // Horizontal row
-    for (let r = 0; r < 5; r++) {
-      let completed = true;
-      for (let c = 0; c < 5; c++) {
-        const val = matrix[r][c];
-        if (!isNumberValid(val) || !marked[r][c]) {
-          completed = false;
-          break;
-        }
-      }
-      if (completed) return true;
-    }
-
-    // Vertical column
-    for (let c = 0; c < 5; c++) {
-      let completed = true;
-      for (let r = 0; r < 5; r++) {
-        const val = matrix[r][c];
-        if (!isNumberValid(val) || !marked[r][c]) {
-          completed = false;
-          break;
-        }
-      }
-      if (completed) return true;
-    }
-
-    // Diagonals
-    let diag1 = true;
-    let diag2 = true;
-    for (let i = 0; i < 5; i++) {
-      if (!isNumberValid(matrix[i][i]) || !marked[i][i]) diag1 = false;
-      if (!isNumberValid(matrix[i][4 - i]) || !marked[i][4 - i]) diag2 = false;
-    }
-    return diag1 || diag2;
-  }
-
-  return false;
-};
 
 // Helper to generate a classic Bingo 75 card
 const generateBingoCard = (): BingoCard => {
@@ -527,7 +427,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       })
       .on('broadcast', { event: 'approve-tx' }, (payload) => {
-        const { id, playerName, quantity } = payload.payload;
+        const { playerName, quantity } = payload.payload;
         // Generate local cards for the matching player tab
         if (roleRef.current === 'player' && playerNameRef.current === playerName) {
           const cards: BingoCard[] = [];
