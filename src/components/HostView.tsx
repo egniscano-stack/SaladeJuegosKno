@@ -58,6 +58,13 @@ export const HostView: React.FC = () => {
     payoutChatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [pendingClaims]);
 
+  // Request Notification Permissions for Host on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   // Reset receipt state on console toggle
   useEffect(() => {
     if (!chatExpanded) {
