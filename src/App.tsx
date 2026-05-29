@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { BingoProvider, useBingo } from './context/BingoContext';
 import { HostView } from './components/HostView';
 import { PlayerView } from './components/PlayerView';
+import { SuperAdminView } from './components/SuperAdminView';
 import { 
   Users, Wifi, PlusCircle, Lock, LogIn, KeyRound, ArrowLeft
 } from 'lucide-react';
@@ -18,13 +19,34 @@ const BingoAppContent: React.FC = () => {
     hostUser,
     hostRegister,
     hostLogin,
-    hostLogout
+    hostLogout,
+    superAdminUser,
+    superAdminLogin,
+    superAdminLogout
   } = useBingo();
 
   const [hostAuthMode, setHostAuthMode] = useState<'none' | 'login' | 'register'>('none');
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
+
+  // Easter egg for Super Admin Login
+  const [logoClicks, setLogoClicks] = useState(0);
+  const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleLogoClick = () => {
+    setLogoClicks(prev => {
+      const newClicks = prev + 1;
+      if (newClicks >= 5) {
+        setRole('superadmin-login');
+        return 0;
+      }
+      return newClicks;
+    });
+
+    if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
+    clickTimeoutRef.current = setTimeout(() => setLogoClicks(0), 1000); // reset if 1 second passes between clicks
+  };
 
   // Handle URL Room parameters for auto-join link generation!
   useEffect(() => {
@@ -174,11 +196,13 @@ const BingoAppContent: React.FC = () => {
               <img
                 src={appLogo}
                 alt="Salas de Juegos K-NO"
+                onClick={handleLogoClick}
                 style={{
                   width: '110px', height: '110px',
                   borderRadius: '24px',
                   border: '2px solid rgba(139,92,246,0.5)',
-                  boxShadow: '0 0 0 6px rgba(139,92,246,0.1), 0 20px 60px rgba(0,0,0,0.5)'
+                  boxShadow: '0 0 0 6px rgba(139,92,246,0.1), 0 20px 60px rgba(0,0,0,0.5)',
+                  cursor: 'pointer'
                 }}
               />
               <div style={{
@@ -308,6 +332,53 @@ const BingoAppContent: React.FC = () => {
         </main>
       )}
 
+      {/* Super Admin Secret Login View */}
+      {role === 'superadmin-login' && (
+        <main className="role-selection-wrapper" style={{ maxWidth: '400px', margin: '3rem auto' }}>
+          <div className="panel-card" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', backdropFilter: 'blur(16px)', background: 'rgba(20, 10, 10, 0.95)', border: '1px solid rgba(239, 68, 68, 0.5)', boxShadow: '0 10px 40px rgba(239, 68, 68, 0.2)', borderRadius: 'var(--radius-lg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.85rem' }} onClick={() => setRole('select')}>
+              <ArrowLeft size={16} /> Volver al Inicio
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#ef4444', margin: 0 }}>Modo Dios</h2>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem', margin: 0 }}>Global Super Admin Portal</p>
+            </div>
+
+            {authError && <div style={{ color: '#ef4444', fontSize: '0.8rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', padding: '0.5rem', borderRadius: '4px', textAlign: 'center' }}>{authError}</div>}
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const res = await superAdminLogin(authUsername, authPassword);
+              if (res.success) {
+                // Role is set to 'superadmin' inside context
+              } else {
+                setAuthError(res.error || '');
+              }
+            }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Usuario Administrador</label>
+                <div style={{ position: 'relative' }}>
+                  <Lock size={14} style={{ position: 'absolute', left: '10px', top: '12px', color: 'var(--text-muted)' }} />
+                  <input type="text" value={authUsername} onChange={e => setAuthUsername(e.target.value)} required placeholder="Usuario Dios" style={{ width: '100%', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.85rem', padding: '0.6rem 0.6rem 0.6rem 2.2rem', color: 'white', outline: 'none' }} />
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Llave de Seguridad</label>
+                <div style={{ position: 'relative' }}>
+                  <KeyRound size={14} style={{ position: 'absolute', left: '10px', top: '12px', color: 'var(--text-muted)' }} />
+                  <input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} required placeholder="••••••••" style={{ width: '100%', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.85rem', padding: '0.6rem 0.6rem 0.6rem 2.2rem', color: 'white', outline: 'none' }} />
+                </div>
+              </div>
+
+              <button className="btn-primary" type="submit" style={{ width: '100%', padding: '0.6rem', fontSize: '0.85rem', fontWeight: 'bold', justifyContent: 'center', marginTop: '0.5rem', background: '#ef4444', borderColor: '#b91c1c' }}>
+                <LogIn size={16} /> Autenticar
+              </button>
+            </form>
+          </div>
+        </main>
+      )}
+
       {/* Host Auth Forms */}
       {role === 'select' && hostAuthMode === 'login' && (
         <main className="role-selection-wrapper" style={{ maxWidth: '400px', margin: '3rem auto' }}>
@@ -415,6 +486,7 @@ const BingoAppContent: React.FC = () => {
 
       {role === 'host' && <HostView />}
       {role === 'player' && <PlayerView />}
+      {role === 'superadmin' && <SuperAdminView />}
     </div>
   );
 };

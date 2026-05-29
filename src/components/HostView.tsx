@@ -21,9 +21,10 @@ export const HostView: React.FC = () => {
     updateGameConfig,
     pendingClaims,
     resolveClaim,
-    regenerateRoom,
     sendPayoutChatMessage,
-    completePayout
+    completePayout,
+    hostProfile,
+    hostUser
   } = useBingo();
 
   const [copied, setCopied]             = useState(false);
@@ -59,8 +60,119 @@ export const HostView: React.FC = () => {
 
   // Reset receipt state on console toggle
   useEffect(() => {
-    setClaimPayoutReceipt(null);
-  }, [activePayoutClaimId]);
+    if (!chatExpanded) {
+      setClaimPayoutReceipt(null);
+      setActivePayoutClaimId(null);
+      setCompressingClaimPayout(false);
+    }
+  }, [chatExpanded]);
+
+  // SaaS blocking logic
+  const [globalSettings, setGlobalSettings] = useState<any>(null);
+  const [paymentImage, setPaymentImage] = useState<string | null>(null);
+  const [submittingPayment, setSubmittingPayment] = useState(false);
+  const isExpired = hostProfile && (
+    hostProfile.status === 'suspended' ||
+    hostProfile.status === 'pending_payment' ||
+    (hostProfile.subscription_end_date && new Date() > new Date(hostProfile.subscription_end_date))
+  );
+
+  useEffect(() => {
+    if (isExpired) {
+      // Fetch global settings for QR
+      import('../lib/supabaseClient').then(({ supabase }) => {
+        supabase.from('platform_settings').select('*').eq('id', 'global').single()
+          .then(({ data }) => setGlobalSettings(data));
+      });
+    }
+  }, [isExpired]);
+
+  const submitSubscriptionPayment = async () => {
+    if (!paymentImage || !hostProfile) return;
+    setSubmittingPayment(true);
+    const { supabase } = await import('../lib/supabaseClient');
+    const paymentId = `sub-pay-${Date.now()}`;
+    
+    await supabase.from('host_payments').insert({
+      id: paymentId,
+      host_id: hostProfile.id,
+      amount: globalSettings?.subscription_price || 80,
+      receipt_image: paymentImage,
+      status: 'pending'
+    });
+
+    await supabase.from('host_profiles').update({ status: 'pending_payment' }).eq('id', hostProfile.id);
+    setSubmittingPayment(false);
+    triggerToast('Pago enviado. Esperando aprobación.');
+  };
+
+  const handleSubQRUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 600; canvas.height = 800; // Compress receipt
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, 600, 800);
+          setPaymentImage(canvas.toDataURL('image/jpeg', 0.8));
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCopyLink = () => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${gameId}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // If subscription is blocked, show payment overlay and stop normal render
+  if (isExpired) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--bg-primary)', padding: '2rem' }}>
+        <div className="panel-card" style={{ maxWidth: '500px', width: '100%', padding: '2rem', textAlign: 'center', background: 'rgba(20, 10, 10, 0.95)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+          <h2 style={{ color: '#ef4444', margin: '0 0 1rem 0' }}>Suscripción Expirada</h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+            {hostProfile?.status === 'pending_payment' 
+              ? 'Tu pago ha sido recibido y está pendiente de aprobación por el Super Administrador. Tu sala estará activa pronto.'
+              : hostProfile?.status === 'suspended'
+              ? 'Tu cuenta ha sido suspendida por el administrador de la plataforma.'
+              : `Tu tiempo de demostración o licencia ha finalizado. Para seguir utilizando la sala de ${hostUser}, realiza el pago de tu mensualidad de $${globalSettings?.subscription_price || '80.00'}.`}
+          </p>
+
+          {hostProfile?.status !== 'pending_payment' && hostProfile?.status !== 'suspended' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem' }}>
+              {globalSettings?.subscription_qr_code ? (
+                <img src={globalSettings.subscription_qr_code} alt="Pago Yappy" style={{ width: '200px', height: '200px', borderRadius: '12px', border: '2px solid rgba(255,255,255,0.1)' }} />
+              ) : (
+                <div style={{ padding: '2rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>QR de pago no configurado</div>
+              )}
+              
+              <div style={{ width: '100%', textAlign: 'left' }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Sube el comprobante de pago de Yappy:</label>
+                <input type="file" accept="image/*" onChange={handleSubQRUpload} style={{ width: '100%', marginTop: '0.5rem', fontSize: '0.8rem' }} />
+              </div>
+
+              {paymentImage && (
+                <button onClick={submitSubscriptionPayment} disabled={submittingPayment} className="btn-primary" style={{ width: '100%', padding: '0.8rem', justifyContent: 'center', background: '#22c55e', borderColor: '#16a34a' }}>
+                  {submittingPayment ? 'Enviando...' : 'Enviar Comprobante y Activar Sala'}
+                </button>
+              )}
+            </div>
+          )}
+          
+          <button onClick={leaveGame} className="btn-secondary" style={{ marginTop: '2rem' }}>Volver al Inicio</button>
+        </div>
+      </div>
+    );
+  }
 
   const compressClaimPayoutReceipt = (file: File) => {
     setCompressingClaimPayout(true);

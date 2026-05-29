@@ -72,7 +72,13 @@ export interface BingoClaim {
   payoutReceipt?: string; // base64 receipt completed by host
 }
 
-export type Role = 'select' | 'host' | 'player';
+export interface HostProfileData {
+  id: string;
+  status: 'demo' | 'active' | 'suspended' | 'pending_payment';
+  subscription_end_date: string;
+}
+
+export type Role = 'select' | 'host' | 'player' | 'superadmin-login' | 'superadmin';
 
 interface BingoContextType {
   role: Role;
@@ -95,9 +101,14 @@ interface BingoContextType {
   
   // Auth state & actions
   hostUser: string | null;
+  hostProfile: HostProfileData | null;
   hostRegister: (user: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   hostLogin: (user: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   hostLogout: () => Promise<void>;
+  
+  superAdminUser: string | null;
+  superAdminLogin: (user: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  superAdminLogout: () => Promise<void>;
   
   // Actions
   createGame: () => Promise<string>;
@@ -301,6 +312,8 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   
   // Host user authentication state
   const [hostUser, setHostUser] = useState<string | null>(null);
+  const [hostProfile, setHostProfile] = useState<HostProfileData | null>(null);
+  const [superAdminUser, setSuperAdminUser] = useState<string | null>(null);
 
   const [gameConfig, setGameConfigState] = useState<GameConfig>({
     gameName: 'Bingo-KNO',
@@ -747,12 +760,20 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       if (data.user) {
         // Insert into profile table
-        const { error: profileError } = await supabase
+        const { error: profileError, data: profileData } = await supabase
           .from('host_profiles')
-          .insert({ id: data.user.id, username });
+          .insert({ id: data.user.id, username, status: 'demo' })
+          .select()
+          .single();
           
         if (profileError) {
            console.error('Error creating profile:', profileError);
+        } else if (profileData) {
+           setHostProfile({
+             id: profileData.id,
+             status: profileData.status,
+             subscription_end_date: profileData.subscription_end_date
+           });
         }
       }
 
@@ -800,6 +821,11 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           .single();
 
         if (profile) {
+          setHostProfile({
+            id: profile.id,
+            status: profile.status,
+            subscription_end_date: profile.subscription_end_date
+          });
           setGameConfigState(prev => ({
             ...prev,
             gameName: profile.game_name || prev.gameName,
@@ -822,8 +848,53 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const hostLogout = useCallback(async () => {
     await supabase.auth.signOut();
     setHostUser(null);
+    setHostProfile(null);
     setRole('select');
     setGameId('');
+  }, []);
+
+  const superAdminLogin = useCallback(async (user: string, pass: string) => {
+    try {
+      const username = user.trim().toLowerCase();
+      const email = `${username}@bingokno.local`;
+      
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: pass,
+      });
+
+      if (error) {
+        return { success: false, error: 'Credenciales inválidas de Super Admin.' };
+      }
+      
+      if (authData.user) {
+        const { data: profile } = await supabase
+          .from('super_admins')
+          .select('*')
+          .eq('id', authData.user.id)
+          .single();
+
+        if (profile) {
+          setSuperAdminUser(profile.username);
+          setRole('superadmin');
+          return { success: true };
+        } else {
+          // If not a superadmin, sign out
+          await supabase.auth.signOut();
+          return { success: false, error: 'No tienes permisos de Super Admin.' };
+        }
+      }
+      
+      return { success: false, error: 'Error desconocido.' };
+    } catch (e) {
+      return { success: false, error: 'Error al iniciar sesión de Super Admin.' };
+    }
+  }, []);
+
+  const superAdminLogout = useCallback(async () => {
+    await supabase.auth.signOut();
+    setSuperAdminUser(null);
+    setRole('select');
   }, []);
 
   const createGame = useCallback(async () => {
@@ -1584,9 +1655,14 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setPlayerName,
       
       hostUser,
+      hostProfile,
       hostRegister,
       hostLogin,
       hostLogout,
+      
+      superAdminUser,
+      superAdminLogin,
+      superAdminLogout,
       
       createGame,
       joinGame,
