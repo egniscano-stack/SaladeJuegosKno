@@ -1,4 +1,4 @@
-name: 🚀 Deploy a Hostinger
+name: 🚀 Build → rama production (Hostinger Git Sync)
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
       - master
 
 jobs:
-  build-and-deploy:
-    name: Build y Deploy
+  build-and-publish:
+    name: Compilar y publicar en rama production
     runs-on: ubuntu-latest
 
     steps:
@@ -30,16 +30,13 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
-      - name: 📤 Subir a Hostinger vía FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: 🌿 Publicar dist/ en rama production
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist/
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}
-          dangerous-clean-slate: false
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: production
+          force_orphan: true
+          commit_message: "deploy: ${{ github.sha }}"
+          user_name: "github-actions[bot]"
+          user_email: "github-actions[bot]@users.noreply.github.com"
