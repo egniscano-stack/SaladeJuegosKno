@@ -114,11 +114,11 @@ interface BingoContextType {
   gameConfig: GameConfig;
   updateGameConfig: (config: Partial<GameConfig>) => void;
   pendingClaims: BingoClaim[];
-  submitClaim: (cardId: string, playerName: string) => void;
-  resolveClaim: (claimId: string, status: 'approved' | 'rejected') => void;
-  submitPayoutDetails: (claimId: string, details: PayoutDetails) => void;
-  sendPayoutChatMessage: (claimId: string, text: string, senderName: string) => void;
-  completePayout: (claimId: string, payoutReceipt?: string) => void;
+  submitClaim: (cardId: string, playerName: string) => Promise<void>;
+  resolveClaim: (claimId: string, status: 'approved' | 'rejected') => Promise<void>;
+  submitPayoutDetails: (claimId: string, details: PayoutDetails) => Promise<void>;
+  sendPayoutChatMessage: (claimId: string, text: string, senderName: string) => Promise<void>;
+  completePayout: (claimId: string, receiptBase64?: string) => Promise<void>;
 }
 
 const BingoContext = createContext<BingoContextType | undefined>(undefined);
@@ -456,6 +456,62 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
           setPlayerCards(prevCards => [...prevCards, ...cards]);
         }
+      })
+      // Listen to new claims
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'claims', filter: `room_id=eq.${gameId}` }, (payload) => {
+        const claim = payload.new as any;
+        const newClaim: BingoClaim = {
+          id: claim.id,
+          playerName: claim.player_name,
+          cardId: claim.card_id,
+          matrix: claim.matrix,
+          marked: claim.marked,
+          winType: claim.win_type,
+          status: claim.status,
+          payoutStatus: claim.payout_status,
+          payoutDetails: claim.payout_details,
+          payoutReceipt: claim.payout_receipt,
+          privateChat: []
+        };
+        setPendingClaims(prev => {
+          if (prev.some(c => c.id === newClaim.id)) return prev;
+          return [...prev, newClaim];
+        });
+      })
+      // Listen to updated claims (resolve, payout updates)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'claims', filter: `room_id=eq.${gameId}` }, (payload) => {
+        const claim = payload.new as any;
+        setPendingClaims(prev => 
+          prev.map(c => c.id === claim.id ? { 
+            ...c, 
+            status: claim.status, 
+            payoutStatus: claim.payout_status,
+            payoutDetails: claim.payout_details || c.payoutDetails,
+            payoutReceipt: claim.payout_receipt || c.payoutReceipt
+          } : c)
+        );
+      })
+      // Listen to private messages for claims
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, (payload) => {
+        const msg = payload.new as any;
+        const newMsg: PrivateMessage = {
+          id: msg.id,
+          sender: msg.sender,
+          text: msg.text,
+          timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isHost: msg.is_host
+        };
+        
+        setPendingClaims(prev => 
+          prev.map(c => {
+            if (c.id === msg.claim_id) {
+              const chat = c.privateChat || [];
+              if (chat.some(m => m.id === newMsg.id)) return c;
+              return { ...c, privateChat: [...chat, newMsg] };
+            }
+            return c;
+          })
+        );
       })
       .subscribe();
 
@@ -1227,20 +1283,36 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
-  const submitClaim = useCallback((cardId: string, pName: string) => {
+  const submitClaim = useCallback(async (cardId: string, pName: string) => {
     const card = playerCards.find(c => c.id === cardId);
-    if (!card) return;
-
-    const isValidClaim = checkWinningPattern(card.matrix, card.marked, drawnNumbers, gameConfig.winningMechanic);
-    console.log(`[Bingo-KNO] Submitting claim. Pattern matching locally: ${isValidClaim}`);
+    if (!card || !gameId) return;
 
     const winTypeString = 
       gameConfig.winningMechanic === 'full' ? 'Cartón Lleno' :
       gameConfig.winningMechanic === 'cajon' ? 'Cajón' :
       gameConfig.winningMechanic === 'terna' ? 'Terna' : 'Línea';
 
+    const claimId = `claim-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+
+    const { error } = await supabase.from('claims').insert({
+      id: claimId,
+      room_id: gameId,
+      player_name: pName,
+      card_id: card.id,
+      matrix: card.matrix,
+      marked: card.marked,
+      win_type: winTypeString,
+      status: 'pending',
+      payout_status: 'pending'
+    });
+
+    if (error) {
+      console.error('Error submitting claim:', error);
+      return;
+    }
+
     const claim: BingoClaim = {
-      id: `claim-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: claimId,
       playerName: pName,
       cardId: card.id,
       matrix: card.matrix,
@@ -1249,84 +1321,115 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       status: 'pending'
     };
 
-    // Broadcast claim so the Host tab receives it in real-time
     setPendingClaims(prev => {
       if (prev.some(c => c.id === claim.id)) return prev;
       return [...prev, claim];
     });
-    bc.postMessage({ type: 'submit-claim', claim });
 
-    // Speak announcement
+    // Speak announcement locally
     speakText(`¡El jugador ${pName} canta ${winTypeString}!`);
 
     // Post system message to chat
-    const sysMsg: ChatMessage = {
+    await supabase.from('chat_messages').insert({
       id: `sys-claim-${claim.id}`,
+      room_id: gameId,
       sender: 'Salas de Juegos K-NO',
       text: `📢 ${pName} cantó ${winTypeString.toUpperCase()} (Cartón ${cardId.substr(-4)}). Verificación del administrador de sala pendiente.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isHost: false
-    };
-    setChatMessages(prev => [...prev, sysMsg]);
-    bc.postMessage({ type: 'chat-message', message: sysMsg });
-  }, [playerCards, gameConfig]);
+      is_host: false
+    });
+  }, [playerCards, gameConfig, gameId]);
 
-  const resolveClaim = useCallback((claimId: string, status: 'approved' | 'rejected') => {
+  const resolveClaim = useCallback(async (claimId: string, status: 'approved' | 'rejected') => {
+    const claim = pendingClaimsRef.current.find(c => c.id === claimId);
+    if (!claim || !gameId) return;
+
+    const { error } = await supabase.from('claims').update({
+      status: status,
+      payout_status: status === 'approved' ? 'pending' : undefined
+    }).eq('id', claimId);
+
+    if (error) {
+      console.error('Error resolving claim:', error);
+      return;
+    }
+    
+    supabase.channel(`room-${gameId}`).send({
+      type: 'broadcast',
+      event: 'resolve-claim',
+      payload: { claimId, status, cardId: claim.cardId, playerName: claim.playerName, winType: claim.winType }
+    });
+    
+    if (status === 'approved') {
+      speakText(`¡Felicidades! ¡El bingo de ${claim.playerName} ha sido aprobado!`);
+      
+      await supabase.from('chat_messages').insert({
+        id: `sys-claim-app-${claimId}`,
+        room_id: gameId,
+        sender: 'Salas de Juegos K-NO',
+        text: `🎉 ¡BINGO APROBADO! La jugada de ${claim.playerName} (${claim.winType.toUpperCase()}) ha sido verificada y es CORRECTA. ¡Tenemos un ganador! 🏆`,
+        is_host: true
+      });
+    } else {
+      speakText(`El bingo de ${claim.playerName} ha sido rechazado.`);
+      
+      await supabase.from('chat_messages').insert({
+        id: `sys-claim-rej-${claimId}`,
+        room_id: gameId,
+        sender: 'Salas de Juegos K-NO',
+        text: `❌ BINGO RECHAZADO. La jugada de ${claim.playerName} (${claim.winType.toUpperCase()}) fue verificada y contiene marcas INCORRECTAS.`,
+        is_host: true
+      });
+    }
+
     setPendingClaims(prev => 
-      prev.map(c => {
-        if (c.id === claimId && c.status === 'pending') {
-          // Broadcast resolution to all player tabs
-          bc.postMessage({ type: 'resolve-claim', claimId, status, cardId: c.cardId, playerName: c.playerName, winType: c.winType });
-          
-          if (status === 'approved') {
-            speakText(`¡Felicidades! ¡El bingo de ${c.playerName} ha sido aprobado!`);
-            
-            const sysMsg: ChatMessage = {
-              id: `sys-claim-app-${claimId}`,
-              sender: 'Salas de Juegos K-NO',
-              text: `🎉 ¡BINGO APROBADO! La jugada de ${c.playerName} (${c.winType.toUpperCase()}) ha sido verificada y es CORRECTA. ¡Tenemos un ganador! 🏆`,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              isHost: true
-            };
-            setChatMessages(prev => [...prev, sysMsg]);
-            bc.postMessage({ type: 'chat-message', message: sysMsg });
-          } else {
-            speakText(`El bingo de ${c.playerName} ha sido rechazado.`);
-            
-            const sysMsg: ChatMessage = {
-              id: `sys-claim-rej-${claimId}`,
-              sender: 'Salas de Juegos K-NO',
-              text: `❌ BINGO RECHAZADO. La jugada de ${c.playerName} (${c.winType.toUpperCase()}) fue verificada y contiene marcas INCORRECTAS.`,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              isHost: true
-            };
-            setChatMessages(prev => [...prev, sysMsg]);
-            bc.postMessage({ type: 'chat-message', message: sysMsg });
-          }
-          return { ...c, status, payoutStatus: status === 'approved' ? 'pending' : undefined, privateChat: [] };
-        }
-        return c;
-      })
+      prev.map(c => c.id === claimId ? { ...c, status, payoutStatus: status === 'approved' ? 'pending' : undefined, privateChat: [] } : c)
     );
-  }, []);
+  }, [gameId]);
 
-  const submitPayoutDetails = useCallback((claimId: string, details: PayoutDetails) => {
+  const submitPayoutDetails = useCallback(async (claimId: string, details: PayoutDetails) => {
+    if (!gameId) return;
+
+    const { error } = await supabase.from('claims').update({
+      payout_status: 'submitted',
+      payout_details: details
+    }).eq('id', claimId);
+
+    if (error) {
+      console.error('Error submitting payout details:', error);
+      return;
+    }
+
+    supabase.channel(`room-${gameId}`).send({
+      type: 'broadcast',
+      event: 'submit-payout-details',
+      payload: { claimId, details }
+    });
+
     setPendingClaims(prev => 
-      prev.map(c => {
-        if (c.id === claimId) {
-          return { ...c, payoutDetails: details, payoutStatus: 'submitted' };
-        }
-        return c;
-      })
+      prev.map(c => c.id === claimId ? { ...c, payoutDetails: details, payoutStatus: 'submitted' } : c)
     );
-    bc.postMessage({ type: 'submit-payout-details', claimId, details });
-  }, []);
+  }, [gameId]);
 
-  const sendPayoutChatMessage = useCallback((claimId: string, text: string, senderName: string) => {
-    if (!text.trim()) return;
+  const sendPayoutChatMessage = useCallback(async (claimId: string, text: string, senderName: string) => {
+    if (!text.trim() || !gameId) return;
     const isUserHost = roleRef.current === 'host';
+    const msgId = `pmsg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+
+    const { error } = await supabase.from('private_messages').insert({
+      id: msgId,
+      claim_id: claimId,
+      sender: senderName,
+      text,
+      is_host: isUserHost
+    });
+
+    if (error) {
+      console.error('Error sending private message:', error);
+      return;
+    }
+
     const newMsg: PrivateMessage = {
-      id: `pmsg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: msgId,
       sender: senderName,
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -1337,41 +1440,51 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       prev.map(c => {
         if (c.id === claimId) {
           const chat = c.privateChat || [];
+          if (chat.some(m => m.id === msgId)) return c;
           return { ...c, privateChat: [...chat, newMsg] };
         }
         return c;
       })
     );
-    bc.postMessage({ type: 'payout-chat-message', claimId, message: newMsg });
-  }, []);
+  }, [gameId]);
 
-  const completePayout = useCallback((claimId: string, receiptBase64?: string) => {
+  const completePayout = useCallback(async (claimId: string, receiptBase64?: string) => {
+    if (!gameId) return;
+
+    const { error } = await supabase.from('claims').update({
+      payout_status: 'completed',
+      payout_receipt: receiptBase64
+    }).eq('id', claimId);
+
+    if (error) {
+      console.error('Error completing payout:', error);
+      return;
+    }
+
+    supabase.channel(`room-${gameId}`).send({
+      type: 'broadcast',
+      event: 'complete-payout',
+      payload: { claimId, receipt: receiptBase64 }
+    });
+
     setPendingClaims(prev => 
-      prev.map(c => {
-        if (c.id === claimId) {
-          return { ...c, payoutStatus: 'completed', payoutReceipt: receiptBase64 };
-        }
-        return c;
-      })
+      prev.map(c => c.id === claimId ? { ...c, payoutStatus: 'completed', payoutReceipt: receiptBase64 } : c)
     );
-    bc.postMessage({ type: 'complete-payout', claimId, receipt: receiptBase64 });
  
-    // Send a system message to the main chat that the payout is completed!
+    // Send a system message to the main chat that the payout is completed
     const claim = pendingClaimsRef.current.find(c => c.id === claimId);
     if (claim) {
-      setTimeout(() => {
-        const sysMsg: ChatMessage = {
+      setTimeout(async () => {
+        await supabase.from('chat_messages').insert({
           id: `sys-payout-comp-${claimId}-${Date.now()}`,
+          room_id: gameId,
           sender: 'Salas de Juegos K-NO',
           text: `💸 PAGO PROCESADO EXITOSAMENTE. El administrador de sala ha completado el pago del premio a ${claim.playerName}. ¡Felicidades! 🏆🎉`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isHost: true
-        };
-        setChatMessages(prev => [...prev, sysMsg]);
-        bc.postMessage({ type: 'chat-message', message: sysMsg });
+          is_host: true
+        });
       }, 200);
     }
-  }, []);
+  }, [gameId]);
 
   return (
     <BingoContext.Provider value={{
