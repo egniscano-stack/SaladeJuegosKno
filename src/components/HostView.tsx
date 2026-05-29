@@ -158,11 +158,11 @@ export const HostView: React.FC = () => {
               : hostProfile?.status === 'requesting_demo'
               ? 'Has solicitado un DEMO. El administrador está revisando tu solicitud.'
               : hostProfile?.status === 'suspended'
-              ? 'Tu cuenta ha sido suspendida por el administrador de la plataforma.'
+              ? 'Tu cuenta ha sido suspendida. Para reactivar tu sala, realiza tu pago mensual y adjunta el comprobante.'
               : `Bienvenido a Salas de Juegos K-NO. Para activar tu sala, realiza el pago mensual de $${globalSettings?.subscription_price || '80.00'} o solicita una prueba gratuita (DEMO).`}
           </p>
 
-          {hostProfile?.status !== 'pending_payment' && hostProfile?.status !== 'suspended' && hostProfile?.status !== 'requesting_demo' && (
+          {hostProfile?.status !== 'pending_payment' && hostProfile?.status !== 'requesting_demo' && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem' }}>
               {globalSettings?.subscription_qr_code ? (
                 <img src={globalSettings.subscription_qr_code} alt="Pago Yappy" style={{ width: '200px', height: '200px', borderRadius: '12px', border: '2px solid rgba(255,255,255,0.1)' }} />
@@ -183,9 +183,11 @@ export const HostView: React.FC = () => {
 
               <hr style={{ width: '100%', border: 'none', borderTop: '1px solid rgba(255,255,255,0.1)', margin: '0.5rem 0' }} />
 
-              <button onClick={requestDemo} disabled={requestingDemo} className="btn-secondary" style={{ width: '100%', padding: '0.8rem', justifyContent: 'center', color: '#c084fc', borderColor: '#c084fc' }}>
-                {requestingDemo ? 'Solicitando...' : 'Solicitar DEMO de prueba'}
-              </button>
+              {hostProfile?.status !== 'suspended' && (
+                <button onClick={requestDemo} disabled={requestingDemo} className="btn-secondary" style={{ width: '100%', padding: '0.8rem', justifyContent: 'center', color: '#c084fc', borderColor: '#c084fc' }}>
+                  {requestingDemo ? 'Solicitando...' : 'Solicitar DEMO de prueba'}
+                </button>
+              )}
             </div>
           )}
           

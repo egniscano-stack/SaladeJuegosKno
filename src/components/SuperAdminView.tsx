@@ -22,6 +22,26 @@ interface PaymentRequest {
   created_at: string;
 }
 
+const notifyAdmin = (title: string, body: string) => {
+  if (typeof window !== 'undefined' && 'Notification' in window) {
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body, icon: '/favicon.ico' });
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          new Notification(title, { body, icon: '/favicon.ico' });
+        } else {
+          alert(`${title}\n${body}`);
+        }
+      });
+    } else {
+      alert(`${title}\n${body}`);
+    }
+  } else {
+    alert(`${title}\n${body}`);
+  }
+};
+
 export const SuperAdminView: React.FC = () => {
   const { superAdminUser, superAdminLogout } = useBingo();
   const [activeTab, setActiveTab] = useState<'users' | 'payments' | 'settings'>('users');
@@ -34,7 +54,39 @@ export const SuperAdminView: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Request notification permission early if not determined
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
     loadData();
+
+    // Subscribe to new demo requests
+    const profileSub = supabase.channel('admin-profiles')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'host_profiles' }, payload => {
+        const newRecord = payload.new as HostProfile;
+        const oldRecord = payload.old as HostProfile;
+        
+        if (newRecord.status === 'requesting_demo' && oldRecord.status !== 'requesting_demo') {
+          notifyAdmin('🔔 Nueva Solicitud de Demo', `El usuario @${newRecord.username} ha solicitado un demo.`);
+          loadData(); // reload table
+        }
+      })
+      .subscribe();
+
+    // Subscribe to new payments
+    const paymentsSub = supabase.channel('admin-payments')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'host_payments' }, payload => {
+        const newRecord = payload.new as PaymentRequest;
+        notifyAdmin('💰 Nuevo Pago Recibido', `Se ha recibido un pago de $${newRecord.amount} para validación.`);
+        loadData(); // reload table
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(profileSub);
+      supabase.removeChannel(paymentsSub);
+    };
   }, []);
 
   const loadData = async () => {
