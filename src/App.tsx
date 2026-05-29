@@ -55,14 +55,14 @@ const BingoAppContent: React.FC = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
-    if (roomParam) {
+    if (roomParam && role !== 'host' && role !== 'superadmin') {
       joinGame(roomParam).then(success => {
         if (success) {
           setRole('player');
         }
       });
     }
-  }, [joinGame, setRole]);
+  }, [joinGame, setRole, role]);
 
   const handleHostClick = async () => {
     if (hostUser) {

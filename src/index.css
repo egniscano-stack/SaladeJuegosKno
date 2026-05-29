@@ -676,6 +676,7 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: 600;
   color: var(--text-muted);
   transition: var(--transition-normal);
+  touch-action: manipulation;
 }
 
 .ball-indicator.is-drawn {
@@ -755,6 +756,7 @@ h1, h2, h3, h4, h5, h6 {
   user-select: none;
   position: relative;
   overflow: hidden;
+  touch-action: manipulation;
 }
 
 .bingo-card-cell:hover {
@@ -961,6 +963,10 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Specific Mobile Adaptations (< 768px - Android & iPhones) */
 @media (max-width: 767px) {
+  input, select, textarea, .chat-input {
+    font-size: 16px !important;
+  }
+
   .role-title {
     font-size: 1.8rem;
     margin-top: 1rem;

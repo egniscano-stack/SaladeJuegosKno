@@ -375,6 +375,19 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
           }
           if (data.game_status) setGameStatus(data.game_status);
+
+          // Sincronizar configuraciones de la sala en tiempo real para el jugador
+          setGameConfigState({
+            gameName: data.game_name || '',
+            cardPrice: data.card_price !== undefined ? data.card_price : '',
+            paymentDetails: data.payment_details || '',
+            winningMechanic: (data.winning_mechanic || 'full') as any,
+            customLogo: data.custom_logo || null,
+            qrCode: data.qr_code || null,
+            payoutAmount: data.payout_amount || '',
+            startDate: data.start_date || '',
+            startTime: data.start_time || ''
+          });
         }
       })
       // Listen to new chat messages
@@ -389,6 +402,13 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
         setChatMessages(prev => {
           if (prev.some(m => m.id === newMsg.id)) return prev;
+
+          // Emit soft alert sound for incoming chat messages from others
+          const isFromMe = newMsg.sender === playerNameRef.current || (roleRef.current === 'host' && newMsg.isHost);
+          if (!isFromMe) {
+            playChatBeep();
+          }
+
           return [...prev, newMsg];
         });
       })
@@ -1784,4 +1804,22 @@ const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes.buffer;
+};
+
+// Soft beep sound generator for incoming chat alerts
+const playChatBeep = () => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1000, ctx.currentTime);
+    gain.gain.setValueAtTime(0.04, ctx.currentTime);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.08);
+  } catch (e) {
+    console.error('AudioContext not supported for chat beep');
+  }
 };

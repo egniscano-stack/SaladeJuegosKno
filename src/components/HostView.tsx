@@ -470,8 +470,8 @@ export const HostView: React.FC = () => {
 
       bc.postMessage({ frame: canvas.toDataURL('image/jpeg', 0.88) });
 
-      // Broadcast highly compressed small frame to Supabase Realtime for remote players at ~1.5 FPS
-      if (frameCount % 8 === 0) {
+      // Broadcast highly compressed small frame to Supabase Realtime for remote players at ~4 FPS (every 3 frames)
+      if (frameCount % 3 === 0) {
         const sbCanvas = document.createElement('canvas');
         sbCanvas.width = 480;
         sbCanvas.height = 270;
