@@ -77,6 +77,51 @@ export const HostView: React.FC = () => {
     }
   }, [chatExpanded]);
 
+  // Self-healing branding synchronization for old/recreated rooms
+  useEffect(() => {
+    if (!gameId) return;
+    
+    const syncBranding = async () => {
+      try {
+        const { data: roomData, error: fetchError } = await supabase
+          .from('rooms')
+          .select('custom_logo, qr_code')
+          .eq('id', gameId)
+          .single();
+          
+        if (fetchError) {
+          console.error('Error fetching room for branding sync:', fetchError);
+          return;
+        }
+        
+        // If room lacks branding or differs, but we have it in our local config, update the room!
+        const needsLogoSync = gameConfig.customLogo && (!roomData.custom_logo || roomData.custom_logo !== gameConfig.customLogo);
+        const needsQrSync = gameConfig.qrCode && (!roomData.qr_code || roomData.qr_code !== gameConfig.qrCode);
+        
+        if (needsLogoSync || needsQrSync) {
+          const updates: any = {};
+          if (needsLogoSync) updates.custom_logo = gameConfig.customLogo;
+          if (needsQrSync) updates.qr_code = gameConfig.qrCode;
+          
+          const { error: updateError } = await supabase
+            .from('rooms')
+            .update(updates)
+            .eq('id', gameId);
+            
+          if (updateError) {
+            console.error('Error updating room branding:', updateError);
+          } else {
+            console.log('Room branding self-healed successfully!');
+          }
+        }
+      } catch (err) {
+        console.error('Unexpected error in branding sync:', err);
+      }
+    };
+    
+    syncBranding();
+  }, [gameId, gameConfig.customLogo, gameConfig.qrCode]);
+
   // SaaS blocking logic
   const [globalSettings, setGlobalSettings] = useState<any>(null);
   const [paymentImage, setPaymentImage] = useState<string | null>(null);
