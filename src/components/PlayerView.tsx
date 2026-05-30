@@ -1209,7 +1209,12 @@ export const PlayerView: React.FC = () => {
                       {purchaseReceipt && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
                           <span style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 'bold' }}>✓ Comprobante cargado</span>
-                          <img src={purchaseReceipt} alt="Receipt Preview" style={{ width: '40px', height: '40px', borderRadius: '4px', border: '1px solid #10b981' }} />
+                          <img 
+                            src={purchaseReceipt} 
+                            alt="Receipt Preview" 
+                            onClick={() => setLightboxImage(purchaseReceipt)}
+                            style={{ width: '40px', height: '40px', borderRadius: '4px', border: '1px solid #10b981', cursor: 'zoom-in' }} 
+                          />
                         </div>
                       )}
                     </>
@@ -1434,7 +1439,13 @@ export const PlayerView: React.FC = () => {
                       {yappyQrBase64 && (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', marginTop: '0.3rem' }}>
                           <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 'bold' }}>✓ QR Optimizado Proporcionalmente (150x150)</span>
-                          <img src={yappyQrBase64} alt="Yappy QR Preview" style={{ width: '120px', height: '120px', borderRadius: '8px', border: '2px solid #10b981', boxShadow: '0 0 10px rgba(16,185,129,0.2)' }} />
+                          <img 
+                            src={yappyQrBase64} 
+                            alt="Yappy QR Preview" 
+                            onClick={() => setLightboxImage(yappyQrBase64)}
+                            style={{ width: '120px', height: '120px', borderRadius: '8px', border: '2px solid #10b981', boxShadow: '0 0 10px rgba(16,185,129,0.2)', cursor: 'zoom-in' }} 
+                            title="Haz clic para ampliar"
+                          />
                         </div>
                       )}
                     </div>

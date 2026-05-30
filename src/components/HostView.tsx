@@ -1634,7 +1634,13 @@ export const HostView: React.FC = () => {
                   {claimPayoutReceipt && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
                       <span style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 'bold' }}>✓ Comprobante listo para enviar</span>
-                      <img src={claimPayoutReceipt} alt="Receipt Preview" style={{ width: '40px', height: '40px', borderRadius: '4px', border: '1px solid #10b981' }} />
+                      <img 
+                        src={claimPayoutReceipt} 
+                        alt="Receipt Preview" 
+                        onClick={() => setLightboxImage(claimPayoutReceipt)}
+                        style={{ width: '40px', height: '40px', borderRadius: '4px', border: '1px solid #10b981', cursor: 'zoom-in' }} 
+                        title="Haz clic para ampliar"
+                      />
                     </div>
                   )}
                 </div>
