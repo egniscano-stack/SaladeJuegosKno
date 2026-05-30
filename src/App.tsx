@@ -7,6 +7,7 @@ import {
   Users, Wifi, PlusCircle, Lock, LogIn, KeyRound, ArrowLeft, Menu, LogOut, ChevronDown
 } from 'lucide-react';
 import appLogo from './logo.png';
+import { supabase } from './lib/supabaseClient';
 
 const BingoAppContent: React.FC = () => {
   const {
@@ -22,7 +23,8 @@ const BingoAppContent: React.FC = () => {
     hostLogout,
     superAdminLogin,
     superAdminRegister,
-    leaveGame
+    leaveGame,
+    setPlayerName
   } = useBingo();
 
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
@@ -53,27 +55,64 @@ const BingoAppContent: React.FC = () => {
     clickTimeoutRef.current = setTimeout(() => setLogoClicks(0), 1000);
   };
 
+  const [invitedRoomId, setInvitedRoomId] = useState<string | null>(null);
+  const [invitedRoomName, setInvitedRoomName] = useState<string>('Mi Gran Bingo');
+  const [invitedPlayerName, setInvitedPlayerName] = useState('');
+  const [joiningRoom, setJoiningRoom] = useState(false);
+
   // Handle URL Room parameters for auto-join link generation!
-  // Only fires ONCE on mount — prevents host from being switched to player on re-renders
+  // Only fires ONCE on mount — displays the name prompt landing screen before joining
   useEffect(() => {
     if (hasJoinedFromURLRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
-    // Never auto-join if already logged in as host or super admin
     const currentRole = sessionStorage.getItem('bingo_role') || 'select';
+    
     if (roomParam && currentRole !== 'host' && currentRole !== 'superadmin') {
       hasJoinedFromURLRef.current = true;
-      joinGame(roomParam).then(success => {
-        if (success) {
-          setRole('player');
-        }
-      });
+      const formattedRoom = roomParam.trim().toUpperCase();
+      setInvitedRoomId(formattedRoom);
+      
+      // Fetch room name from Supabase for a stunning welcome card!
+      supabase
+        .from('rooms')
+        .select('game_name')
+        .eq('id', formattedRoom)
+        .single()
+        .then((res: any) => {
+          if (res.data && res.data.game_name) {
+            setInvitedRoomName(res.data.game_name);
+          }
+        }, () => {});
     } else if (roomParam && (currentRole === 'host' || currentRole === 'superadmin')) {
-      // Mark as handled so we don't keep trying
       hasJoinedFromURLRef.current = true;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleJoinInvitedRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!invitedRoomId || !invitedPlayerName.trim()) return;
+
+    setJoiningRoom(true);
+    try {
+      // Set name in context
+      setPlayerName(invitedPlayerName.trim());
+      
+      // Join room in Supabase
+      const success = await joinGame(invitedRoomId);
+      if (success) {
+        setRole('player');
+        setInvitedRoomId(null); // Clear welcome state
+      } else {
+        alert('No se pudo encontrar o entrar a la sala. Es posible que el código sea inválido.');
+      }
+    } catch (err) {
+      console.error('Error joining room:', err);
+    } finally {
+      setJoiningRoom(false);
+    }
+  };
 
   const handleHostClick = async () => {
     if (hostUser) {
@@ -208,7 +247,7 @@ const BingoAppContent: React.FC = () => {
           )}
         </div>
       </header>      {/* Main Content Render */}
-      {role === 'select' && hostAuthMode === 'none' && (
+      {role === 'select' && hostAuthMode === 'none' && !invitedRoomId && (
         <main style={{
           minHeight: '100vh',
           display: 'flex',
@@ -387,6 +426,112 @@ const BingoAppContent: React.FC = () => {
                 <strong style={{ color: '#c084fc' }}>¿Eres jugador?</strong> Los jugadores solo pueden ingresar a través del enlace de invitación que te comparte tu administrador de sala.
               </p>
             </div>
+          </div>
+        </main>
+      )}
+
+      {/* Main Content Render: Glowing welcome/invite screen for auto-join links */}
+      {role === 'select' && invitedRoomId && (
+        <main style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem 1rem',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          {/* Background orbs */}
+          <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
+            <div style={{ position: 'absolute', top: '15%', left: '10%', width: '300px', height: '300px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%)', animation: 'floatBall 8s infinite' }} />
+            <div style={{ position: 'absolute', bottom: '15%', right: '10%', width: '250px', height: '250px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(245,158,11,0.12) 0%, transparent 70%)', animation: 'floatBall 10s infinite reverse' }} />
+          </div>
+
+          {/* Glowing Invite Card */}
+          <div style={{
+            zIndex: 1, width: '100%', maxWidth: '420px',
+            background: 'rgba(15, 18, 30, 0.88)',
+            backdropFilter: 'blur(20px)',
+            border: '2px solid var(--accent-gold)',
+            borderRadius: '20px',
+            padding: '2.25rem 2rem',
+            boxShadow: '0 0 40px rgba(245, 158, 11, 0.25), 0 10px 50px rgba(0,0,0,0.6)',
+            display: 'flex', flexDirection: 'column', gap: '1.5rem',
+            animation: 'ballPopBig 0.5s cubic-bezier(0.175,0.885,0.32,1.275)',
+            textAlign: 'center'
+          }}>
+            <div>
+              <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem auto', boxShadow: '0 0 15px var(--accent-gold)' }}>
+                <Users size={30} style={{ color: 'black' }} />
+              </div>
+              <span style={{ fontSize: '0.72rem', background: 'var(--accent-gold)', color: 'black', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                🏆 Invitación Entrante
+              </span>
+              <h2 style={{ fontSize: '1.45rem', fontWeight: 'bold', color: 'white', marginTop: '0.75rem', marginBottom: '0.25rem', fontFamily: 'var(--font-display)' }}>
+                ¡Te invitan a Jugar!
+              </h2>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+                Código de Sala: <strong style={{ color: 'white' }}>{invitedRoomId}</strong>
+              </p>
+            </div>
+
+            {/* Glowing game name badge */}
+            <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '10px', padding: '0.75rem 1rem' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Nombre del Bingo:</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--accent-gold)', marginTop: '0.15rem' }}>{invitedRoomName}</div>
+            </div>
+
+            {/* Invite Form */}
+            <form onSubmit={handleJoinInvitedRoom} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', textAlign: 'left' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <label htmlFor="invitedName" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
+                  Introduce tu Nombre o Apodo:
+                </label>
+                <input 
+                  id="invitedName"
+                  type="text" 
+                  required
+                  value={invitedPlayerName}
+                  onChange={(e) => setInvitedPlayerName(e.target.value)}
+                  placeholder="Ej: Carlos G. o Afortunado22"
+                  autoComplete="off"
+                  maxLength={25}
+                  style={{
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    padding: '0.6rem 0.75rem',
+                    color: 'white',
+                    outline: 'none',
+                    width: '100%',
+                    transition: 'border-color 0.2s ease'
+                  }}
+                  onFocus={e => e.target.style.borderColor = 'var(--accent-gold)'}
+                  onBlur={e => e.target.style.borderColor = 'var(--border-color)'}
+                />
+              </div>
+
+              <button 
+                className="btn-accent" 
+                type="submit" 
+                disabled={joiningRoom || !invitedPlayerName.trim()}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  fontSize: '0.9rem',
+                  fontWeight: 'bold',
+                  justifyContent: 'center',
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  boxShadow: '0 4px 15px rgba(245,158,11,0.3)',
+                  marginTop: '0.5rem',
+                  opacity: joiningRoom ? 0.7 : 1
+                }}
+              >
+                {joiningRoom ? '🎮 Conectando...' : '🎮 Unirse al Bingo'}
+              </button>
+            </form>
           </div>
         </main>
       )}

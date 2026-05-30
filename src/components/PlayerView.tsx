@@ -1151,6 +1151,7 @@ export const PlayerView: React.FC = () => {
                   <img 
                     src={gameConfig.qrCode} 
                     alt="QR Yappy Administrador" 
+                    onClick={() => setLightboxImage(gameConfig.qrCode)}
                     style={{ 
                       width: '120px', 
                       height: '120px', 
@@ -1159,8 +1160,10 @@ export const PlayerView: React.FC = () => {
                       padding: '6px', 
                       borderRadius: '8px', 
                       border: '3px solid #0088cc',
-                      boxShadow: '0 4px 15px rgba(0, 136, 204, 0.2)'
+                      boxShadow: '0 4px 15px rgba(0, 136, 204, 0.2)',
+                      cursor: 'zoom-in'
                     }} 
+                    title="Click para ampliar código QR"
                   />
                 ) : (
                   /* Custom simulated QR code using SVG styling */
