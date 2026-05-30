@@ -385,13 +385,32 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             .single();
           
           if (fullRoom) {
+            let customLogo = fullRoom.custom_logo || null;
+            let qrCode = fullRoom.qr_code || null;
+            
+            if ((!customLogo || !qrCode) && fullRoom.host_id) {
+              try {
+                const { data: profile } = await supabase
+                  .from('host_profiles')
+                  .select('custom_logo, qr_code')
+                  .eq('id', fullRoom.host_id)
+                  .single();
+                if (profile) {
+                  if (!customLogo) customLogo = profile.custom_logo || null;
+                  if (!qrCode) qrCode = profile.qr_code || null;
+                }
+              } catch (e) {
+                console.error('Error fetching host profile fallback on update:', e);
+              }
+            }
+
             setGameConfigState({
               gameName: fullRoom.game_name || '',
               cardPrice: fullRoom.card_price !== undefined ? fullRoom.card_price : '',
               paymentDetails: fullRoom.payment_details || '',
               winningMechanic: (fullRoom.winning_mechanic || 'full') as any,
-              customLogo: fullRoom.custom_logo || null,
-              qrCode: fullRoom.qr_code || null,
+              customLogo,
+              qrCode,
               payoutAmount: fullRoom.payout_amount || '',
               startDate: fullRoom.start_date || '',
               startTime: fullRoom.start_time || ''
@@ -1094,13 +1113,32 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setLastDrawn(null);
       }
       
+      let customLogo = data.custom_logo || null;
+      let qrCode = data.qr_code || null;
+      
+      if ((!customLogo || !qrCode) && data.host_id) {
+        try {
+          const { data: profile } = await supabase
+            .from('host_profiles')
+            .select('custom_logo, qr_code')
+            .eq('id', data.host_id)
+            .single();
+          if (profile) {
+            if (!customLogo) customLogo = profile.custom_logo || null;
+            if (!qrCode) qrCode = profile.qr_code || null;
+          }
+        } catch (e) {
+          console.error('Error fetching host profile fallback on join:', e);
+        }
+      }
+
       setGameConfigState({
         gameName: data.game_name,
         cardPrice: data.card_price,
         paymentDetails: data.payment_details,
         winningMechanic: data.winning_mechanic as any,
-        customLogo: data.custom_logo,
-        qrCode: data.qr_code,
+        customLogo,
+        qrCode,
         payoutAmount: data.payout_amount,
         startDate: data.start_date,
         startTime: data.start_time
