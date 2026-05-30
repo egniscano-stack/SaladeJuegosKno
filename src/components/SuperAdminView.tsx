@@ -371,13 +371,52 @@ export const SuperAdminView: React.FC = () => {
         <div 
           onClick={() => setLightboxImage(null)}
           style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(0,0,0,0.9)', zIndex: 9999,
-            display: 'flex', justifyContent: 'center', alignItems: 'center',
-            cursor: 'zoom-out', padding: '2rem'
+            position: 'fixed', inset: 0, zIndex: 9999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(10, 5, 15, 0.95)', backdropFilter: 'blur(10px)',
+            animation: 'fadeInOverlay 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            cursor: 'zoom-out', padding: '1rem'
           }}
         >
-          <img src={lightboxImage} alt="Zoom" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px' }} />
+          {/* Elegant Circular Close "X" Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setLightboxImage(null);
+            }}
+            style={{
+              position: 'absolute', top: '1.5rem', right: '1.5rem',
+              width: '46px', height: '46px', borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.2)',
+              color: 'white', fontSize: '1.5rem', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.5)', transition: 'all 0.2s ease',
+              outline: 'none', zIndex: 10000
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)';
+              e.currentTarget.style.transform = 'scale(1.05)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            ✕
+          </button>
+          <img 
+            src={lightboxImage} 
+            alt="Zoomed preview" 
+            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking the image itself
+            style={{
+              maxWidth: '95vw', maxHeight: '95vh',
+              objectFit: 'contain', borderRadius: '12px',
+              border: '2px solid rgba(255,255,255,0.15)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.7), 0 0 40px rgba(139,92,246,0.15)',
+              cursor: 'default',
+              animation: 'zoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+            }} 
+          />
         </div>
       )}
     </div>

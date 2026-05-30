@@ -1673,17 +1673,51 @@ export const PlayerView: React.FC = () => {
         <div 
           onClick={() => setLightboxImage(null)}
           style={{
-            position: 'fixed', inset: 0, zIndex: 6000,
+            position: 'fixed', inset: 0, zIndex: 9999,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(5px)',
-            animation: 'fadeInOverlay 0.2s ease',
-            cursor: 'zoom-out'
+            background: 'rgba(10, 5, 15, 0.95)', backdropFilter: 'blur(10px)',
+            animation: 'fadeInOverlay 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            cursor: 'zoom-out', padding: '1rem'
           }}
         >
+          {/* Elegant Circular Close "X" Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setLightboxImage(null);
+            }}
+            style={{
+              position: 'absolute', top: '1.5rem', right: '1.5rem',
+              width: '46px', height: '46px', borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.2)',
+              color: 'white', fontSize: '1.5rem', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.5)', transition: 'all 0.2s ease',
+              outline: 'none', zIndex: 10000
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)';
+              e.currentTarget.style.transform = 'scale(1.05)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            ✕
+          </button>
           <img 
             src={lightboxImage} 
-            alt="Receipt Zoomed" 
-            style={{ maxWidth: '90%', maxHeight: '90%', borderRadius: '12px', border: '3px solid white', boxShadow: '0 0 50px rgba(255,255,255,0.2)' }} 
+            alt="Zoomed preview" 
+            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking the image itself
+            style={{
+              maxWidth: '95vw', maxHeight: '95vh',
+              objectFit: 'contain', borderRadius: '12px',
+              border: '2px solid rgba(255,255,255,0.15)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.7), 0 0 40px rgba(139,92,246,0.15)',
+              cursor: 'default',
+              animation: 'zoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+            }} 
           />
         </div>
       )}
