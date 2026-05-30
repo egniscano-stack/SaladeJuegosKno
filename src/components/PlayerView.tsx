@@ -1034,6 +1034,66 @@ export const PlayerView: React.FC = () => {
             </div>
           </div>
 
+          {/* Ficha de la Sala y Pago QR */}
+          <div className="panel-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.25rem', paddingLeft: '0.25rem' }}>
+              <Sparkles size={12} style={{ color: 'var(--accent-gold)' }} /> Información del Organizador
+            </span>
+            
+            {/* Header info with logo */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(255,255,255,0.02)', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+              {gameConfig.customLogo ? (
+                <img 
+                  src={gameConfig.customLogo} 
+                  alt="Logo del Organizador" 
+                  style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-violet)', boxShadow: '0 0 10px rgba(139,92,246,0.2)' }}
+                />
+              ) : (
+                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--accent-violet)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                  BK
+                </div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.8rem', color: 'white', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {gameConfig.gameName}
+                </div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  Organizador Activo
+                </div>
+              </div>
+            </div>
+
+            {/* Yappy QR Code of Admin */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', background: 'rgba(0,0,0,0.25)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
+                QR de Pago del Organizador
+              </div>
+              {gameConfig.qrCode ? (
+                <div style={{ position: 'relative', cursor: 'zoom-in' }} onClick={() => setLightboxImage(gameConfig.qrCode)}>
+                  <img 
+                    src={gameConfig.qrCode} 
+                    alt="QR Yappy del Organizador" 
+                    style={{ width: '110px', height: '110px', objectFit: 'contain', background: 'white', padding: '4px', borderRadius: '6px', border: '2px solid #0088cc' }} 
+                  />
+                  <div style={{ position: 'absolute', bottom: '4px', right: '4px', background: 'rgba(0,0,0,0.6)', borderRadius: '4px', padding: '2px 4px', fontSize: '0.55rem', color: 'white' }}>
+                    🔍 Ampliar
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', opacity: 0.65 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100px', height: '100px', borderRadius: '6px', background: 'rgba(255,255,255,0.04)', border: '2px dashed rgba(255,255,255,0.1)' }}>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.5rem' }}>Sin QR cargado</span>
+                  </div>
+                </div>
+              )}
+              {gameConfig.paymentDetails && (
+                <p style={{ fontSize: '0.68rem', color: 'var(--accent-gold)', margin: '0.2rem 0 0 0', wordBreak: 'break-all', fontWeight: 'bold' }}>
+                  {gameConfig.paymentDetails}
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* User Profile Card */}
           <div className="panel-card" style={{ padding: '0.75rem', gap: '0.5rem' }}>
             <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.25rem', paddingLeft: '0.25rem' }}>
