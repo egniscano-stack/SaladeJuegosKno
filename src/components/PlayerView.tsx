@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useBingo } from '../context/BingoContext';
+import { useBingo, parseReceiptData, formatPayoutAmount } from '../context/BingoContext';
 import { 
   Tv, CreditCard, 
   Award, Sparkles, User, ShoppingBag, Plus, Minus,
@@ -36,6 +36,24 @@ export const PlayerView: React.FC = () => {
     submitPayoutDetails,
     sendPayoutChatMessage
   } = useBingo();
+
+  const getLineOwner = (lineNum: number) => {
+    const tx = pendingTransactions.find(t => {
+      if (t.status !== 'approved') return false;
+      const parsed = parseReceiptData(t.paymentReceipt);
+      return parsed.lines.includes(lineNum);
+    });
+    return tx ? tx.playerName : null;
+  };
+
+  const getLinePendingOwner = (lineNum: number) => {
+    const tx = pendingTransactions.find(t => {
+      if (t.status !== 'pending') return false;
+      const parsed = parseReceiptData(t.paymentReceipt);
+      return parsed.lines.includes(lineNum);
+    });
+    return tx ? tx.playerName : null;
+  };
 
   const winningCard = playerCards.find(c => c.isWinner);
 
@@ -511,7 +529,7 @@ export const PlayerView: React.FC = () => {
           </strong>
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)' }}>
-          💸 Precio Cartón: <strong style={{ color: 'white', marginLeft: '0.15rem' }}>${(Number(gameConfig.cardPrice) || 0).toFixed(2)} USD</strong>
+          💸 Precio por Línea: <strong style={{ color: 'white', marginLeft: '0.15rem' }}>${(Number(gameConfig.cardPrice) || 0).toFixed(2)} USD</strong>
         </span>
       </div>
 
@@ -978,6 +996,8 @@ export const PlayerView: React.FC = () => {
                       const colConfig = getBallColor(letter);
                       const isDrawn = drawnNumbers.includes(num);
                       const isLast = lastDrawn === num;
+                      const owner = getLineOwner(rIdx + 1);
+                      const pendingOwner = getLinePendingOwner(rIdx + 1);
                       
                       return (
                         <div
@@ -986,8 +1006,8 @@ export const PlayerView: React.FC = () => {
                             width: '32px',
                             height: '32px',
                             borderRadius: '50%',
-                            border: `2px solid ${colConfig.color}`,
-                            background: isDrawn ? colConfig.bg : 'white',
+                            border: `2px solid ${isLast ? '#c084fc' : isDrawn ? '#a855f7' : colConfig.color}`,
+                            background: isDrawn ? 'linear-gradient(135deg, #a855f7, #6b21a8)' : 'white',
                             color: isDrawn ? 'white' : colConfig.color,
                             display: 'flex',
                             alignItems: 'center',
@@ -995,17 +1015,55 @@ export const PlayerView: React.FC = () => {
                             fontWeight: 900,
                             fontSize: '0.85rem',
                             boxShadow: isLast 
-                              ? `0 0 12px ${colConfig.shadow}, inset 0 0 4px rgba(255,255,255,0.6)` 
+                              ? `0 0 12px #c084fc, inset 0 0 4px rgba(255,255,255,0.6)` 
                               : isDrawn 
-                              ? 'none' 
+                              ? '0 0 6px rgba(168, 85, 247, 0.4)' 
                               : 'inset 0 1px 3px rgba(0,0,0,0.1)',
                             transform: isLast ? 'scale(1.18)' : 'scale(1)',
                             animation: isLast ? 'ringPulse 1.5s infinite' : 'none',
                             zIndex: isLast ? 10 : 1,
-                            transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                            transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                            position: 'relative'
                           }}
                         >
                           {num}
+                          {cIdx === 0 && owner && (
+                            <span style={{
+                              position: 'absolute',
+                              left: '-62px',
+                              background: 'var(--accent-gold)',
+                              color: 'black',
+                              fontSize: '0.55rem',
+                              padding: '0.05rem 0.25rem',
+                              borderRadius: '4px',
+                              fontWeight: 'bold',
+                              whiteSpace: 'nowrap',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                              border: '1px solid #78350f',
+                              zIndex: 5
+                            }}>
+                              👤 {owner.split(' ')[0]}
+                            </span>
+                          )}
+                          {cIdx === 0 && pendingOwner && !owner && (
+                            <span style={{
+                              position: 'absolute',
+                              left: '-62px',
+                              background: '#fbbf24',
+                              color: 'black',
+                              fontSize: '0.55rem',
+                              padding: '0.05rem 0.25rem',
+                              borderRadius: '4px',
+                              fontWeight: 'bold',
+                              whiteSpace: 'nowrap',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                              border: '1px solid #78350f',
+                              zIndex: 5,
+                              opacity: 0.85
+                            }}>
+                              ⏳ {pendingOwner.split(' ')[0]}
+                            </span>
+                          )}
                         </div>
                       );
                     });
@@ -1105,9 +1163,9 @@ export const PlayerView: React.FC = () => {
                     <ShoppingBag size={24} />
                   </div>
                   <div>
-                    <h4 style={{ fontSize: '1rem', fontWeight: 'bold', color: 'white' }}>¡Adquiere tus Cartones!</h4>
+                    <h4 style={{ fontSize: '1rem', fontWeight: 'bold', color: 'white' }}>¡Adquiere tus Líneas!</h4>
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: '280px', margin: '0.2rem auto 0 auto' }}>
-                      Cada cartón digital es único y cuesta solo <strong>${(Number(gameConfig.cardPrice) || 0).toFixed(2)} Yappy</strong>. Paga de forma segura.
+                      Cada línea cuesta solo <strong>${(Number(gameConfig.cardPrice) || 0).toFixed(2)} Yappy</strong>. Paga de forma segura.
                     </p>
                   </div>
  
@@ -1129,7 +1187,7 @@ export const PlayerView: React.FC = () => {
                   </div>
  
                   <button className="btn-accent" onClick={handlePurchase} style={{ width: '100%', maxWidth: '240px', padding: '0.5rem 1rem', fontSize: '0.85rem', background: 'linear-gradient(135deg, #0088cc 0%, #006699 100%)', boxShadow: '0 4px 10px rgba(0, 136, 204, 0.3)' }}>
-                    <CreditCard size={14} /> Pagar con Yappy QR
+                    <CreditCard size={14} /> Comprar Líneas con Yappy
                   </button>
                 </div>
               ) : (
@@ -1141,7 +1199,7 @@ export const PlayerView: React.FC = () => {
                       <div key={card.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: '1 1 300px', maxWidth: '340px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
-                            Cartón #{cardIdx + 1} <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>({card.id.substr(-6).toUpperCase()})</span>
+                            Línea #{cardIdx + 1} <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>({card.id.substr(-6).toUpperCase()})</span>
                           </span>
 
                           <button 
@@ -1186,38 +1244,75 @@ export const PlayerView: React.FC = () => {
                           </div>
                         )}
 
-                        {/* 5x5 Board grid */}
-                        <div className="bingo-card-container">
-                          <div className="bingo-card-header-row">
-                            {['B', 'I', 'N', 'G', 'O'].map(letter => (
-                              <div key={letter} className="bingo-card-header-cell" style={{ fontSize: '1.2rem', aspectRatio: 1.1 }}>{letter}</div>
-                            ))}
+                        {/* Beautiful Single Row Horizontal 1x5 Line Card */}
+                        <div className="bingo-card-container" style={{ padding: '1rem', background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.6) 0%, rgba(15, 12, 30, 0.8) 100%)', border: '1px solid rgba(139, 92, 246, 0.3)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(16px)' }}>
+                          {/* Header B-I-N-G-O */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', marginBottom: '0.75rem', textAlign: 'center' }}>
+                            {['B', 'I', 'N', 'G', 'O'].map(letter => {
+                              const colConfig = getBallColor(letter);
+                              return (
+                                <div key={letter} style={{ fontSize: '1rem', fontWeight: 900, color: colConfig.color, textShadow: `0 0 8px ${colConfig.shadow}` }}>
+                                  {letter}
+                                </div>
+                              );
+                            })}
                           </div>
 
-                          <div className="bingo-card-grid">
-                            {card.matrix.map((row, rIdx) => 
-                              row.map((val, cIdx) => {
-                                const isFree = rIdx === 2 && cIdx === 2;
-                                const isMarked = localMarked[card.id] ? localMarked[card.id][rIdx][cIdx] : isFree;
-                                const isValidCalled = val !== null && drawnNumbers.includes(val);
+                          {/* 5 Balls Horizontal Row */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', justifyItems: 'center', alignItems: 'center' }}>
+                            {card.matrix[0].map((val, cIdx) => {
+                              const letter = ['B', 'I', 'N', 'G', 'O'][cIdx];
+                              const colConfig = getBallColor(letter);
+                              const isMarked = localMarked[card.id] ? localMarked[card.id][0][cIdx] : false;
+                              const isValidCalled = val !== null && drawnNumbers.includes(val);
 
-                                return (
-                                  <div
-                                    key={`${rIdx}-${cIdx}`}
-                                    onClick={() => toggleCell(card.id, rIdx, cIdx, val)}
-                                    className={`bingo-card-cell ${isMarked ? 'is-marked' : ''} ${isFree ? 'is-free' : ''}`}
-                                    style={{
-                                      fontSize: '1rem',
-                                      borderColor: (isMarked && isValidCalled) ? 'var(--success)' : 
-                                                   (isMarked && !isValidCalled && val !== null) ? 'var(--danger)' : 'var(--border-color)',
-                                      boxShadow: (isMarked && isValidCalled) ? '0 0 8px rgba(16, 185, 129, 0.2)' : 'none'
-                                    }}
-                                  >
-                                    {isFree ? 'LIBRE' : val}
-                                  </div>
-                                );
-                              })
-                            )}
+                              return (
+                                <div
+                                  key={cIdx}
+                                  onClick={() => val !== null && toggleCell(card.id, 0, cIdx, val)}
+                                  style={{
+                                    width: '46px',
+                                    height: '46px',
+                                    borderRadius: '50%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontWeight: 900,
+                                    fontSize: '1.1rem',
+                                    cursor: 'pointer',
+                                    userSelect: 'none',
+                                    transition: 'all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                                    border: isMarked 
+                                      ? `2px solid ${isValidCalled ? 'var(--success)' : 'var(--danger)'}`
+                                      : '2px solid rgba(255, 255, 255, 0.1)',
+                                    background: isMarked
+                                      ? (isValidCalled ? 'linear-gradient(135deg, #10b981 0%, #047857 100%)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)')
+                                      : 'rgba(255, 255, 255, 0.03)',
+                                    color: isMarked ? 'white' : 'var(--text-secondary)',
+                                    boxShadow: isMarked
+                                      ? (isValidCalled ? '0 0 15px rgba(16, 185, 129, 0.6)' : '0 0 15px rgba(239, 68, 68, 0.4)')
+                                      : 'none',
+                                    transform: isMarked ? 'scale(1.08)' : 'scale(1)',
+                                  }}
+                                  onMouseOver={(e) => {
+                                    if (!isMarked) {
+                                      e.currentTarget.style.transform = 'scale(1.1)';
+                                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                                      e.currentTarget.style.borderColor = colConfig.color;
+                                    }
+                                  }}
+                                  onMouseOut={(e) => {
+                                    if (!isMarked) {
+                                      e.currentTarget.style.transform = 'scale(1)';
+                                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                                    }
+                                  }}
+                                >
+                                  {val}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
@@ -1585,7 +1680,7 @@ export const PlayerView: React.FC = () => {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>PREMIO GANADO:</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#10b981' }}>{gameConfig.payoutAmount || '$150.00 USD'}</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#10b981' }}>{formatPayoutAmount(gameConfig.payoutAmount) || '$150.00 USD'}</div>
                 </div>
               </div>
 

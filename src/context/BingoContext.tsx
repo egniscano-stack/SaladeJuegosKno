@@ -16,6 +16,7 @@ export interface BingoCard {
   marked: boolean[][]; // 5x5 marked status
   isWinner: boolean;
   type?: 'Bingo' | 'Línea' | 'Terna' | 'Cajón' | null;
+  purchasedLine?: number;
 }
 
 export interface YappyTransaction {
@@ -39,6 +40,8 @@ export interface GameConfig {
   payoutAmount: string;
   startDate: string;
   startTime: string;
+  bingoPrize?: number | '';
+  ternaPrize?: number | '';
 }
 
 export interface PayoutDetails {
@@ -122,7 +125,7 @@ interface BingoContextType {
   regenerateRoom: () => Promise<string>;
   sendChatMessage: (text: string, senderName?: string) => Promise<void>;
   buyCards: (quantity: number, playerName: string, paymentReceipt?: string) => Promise<string>; // Returns transaction ID
-  approveTransaction: (id: string) => Promise<void>;
+  approveTransaction: (id: string, assignedLines?: number[]) => Promise<void>;
   rejectTransaction: (id: string, reason: string) => Promise<void>;
   claimBingo: (cardId: string, playerName: string) => { won: boolean; type: 'Bingo' | 'Línea' | 'Terna' | 'Cajón' | null };
   gameConfig: GameConfig;
@@ -140,9 +143,56 @@ const BingoContext = createContext<BingoContextType | undefined>(undefined);
 // Initialize BroadcastChannel for cross-tab local communication!
 const bc = new BroadcastChannel('bingo-kno-sync-channel');
 
+export const parsePayoutAmount = (payoutAmount: string) => {
+  let bingoPrize: number | '' = '';
+  let ternaPrize: number | '' = '';
+  if (payoutAmount && payoutAmount.trim().startsWith('{')) {
+    try {
+      const data = JSON.parse(payoutAmount);
+      bingoPrize = data.bingo !== undefined && data.bingo !== '' ? data.bingo : '';
+      ternaPrize = data.terna !== undefined && data.terna !== '' ? data.terna : '';
+    } catch (e) {
+      console.error('Error parsing payout_amount JSON:', e);
+    }
+  }
+  return { bingoPrize, ternaPrize };
+};
+
+export const formatPayoutAmount = (payoutAmount: string) => {
+  if (!payoutAmount) return '';
+  try {
+    if (payoutAmount.trim().startsWith('{')) {
+      const data = JSON.parse(payoutAmount);
+      const b = data.bingo !== undefined && data.bingo !== '' ? Number(data.bingo).toFixed(2) : '0.00';
+      const t = data.terna !== undefined && data.terna !== '' ? Number(data.terna).toFixed(2) : '0.00';
+      return `Bingo: $${b} USD / Terna: $${t} USD`;
+    }
+  } catch (e) {
+    // fallback
+  }
+  return payoutAmount;
+};
+
+export const parseReceiptData = (paymentReceipt?: string) => {
+  if (!paymentReceipt) return { lines: [], receipt: undefined };
+  try {
+    const trimmed = paymentReceipt.trim();
+    if (trimmed.startsWith('{')) {
+      const data = JSON.parse(trimmed);
+      return {
+        lines: data.lines || [],
+        receipt: data.receipt
+      };
+    }
+  } catch (e) {
+    console.error('Error parsing receipt JSON:', e);
+  }
+  return { lines: [], receipt: paymentReceipt };
+};
+
 
 // Helper to generate a classic Bingo 75 card
-const generateBingoCard = (): BingoCard => {
+export const generateBingoCard = (): BingoCard => {
   const matrix: (number | null)[][] = Array(5).fill(null).map(() => Array(5).fill(null));
   const marked: boolean[][] = Array(5).fill(null).map(() => Array(5).fill(false));
 
@@ -187,6 +237,27 @@ const generateBingoCard = (): BingoCard => {
     marked,
     isWinner: false,
     type: null
+  };
+};
+
+// Helper to generate a custom card representing a single purchased horizontal line
+export const generateLineCard = (lineNumber: number): BingoCard => {
+  const matrix: (number | null)[][] = Array(5).fill(null).map(() => Array(5).fill(null));
+  const marked: boolean[][] = Array(5).fill(null).map(() => Array(5).fill(false));
+
+  matrix[0][0] = lineNumber;
+  matrix[0][1] = lineNumber + 15;
+  matrix[0][2] = lineNumber + 30;
+  matrix[0][3] = lineNumber + 45;
+  matrix[0][4] = lineNumber + 60;
+
+  return {
+    id: `line-${lineNumber}-${Math.floor(1000 + Math.random() * 9000)}`,
+    matrix,
+    marked,
+    isWinner: false,
+    type: null,
+    purchasedLine: lineNumber
   };
 };
 
@@ -284,9 +355,11 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     winningMechanic: 'full',
     customLogo: null,
     qrCode: null,
-    payoutAmount: '$150.00',
+    payoutAmount: '',
     startDate: '',
-    startTime: ''
+    startTime: '',
+    bingoPrize: '',
+    ternaPrize: ''
   });
   const [pendingClaims, setPendingClaims] = useState<BingoClaim[]>([]);
 
@@ -404,6 +477,8 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }
             }
 
+            const { bingoPrize, ternaPrize } = parsePayoutAmount(fullRoom.payout_amount || '');
+
             setGameConfigState({
               gameName: fullRoom.game_name || '',
               cardPrice: fullRoom.card_price !== undefined ? fullRoom.card_price : '',
@@ -413,7 +488,9 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               qrCode,
               payoutAmount: fullRoom.payout_amount || '',
               startDate: fullRoom.start_date || '',
-              startTime: fullRoom.start_time || ''
+              startTime: fullRoom.start_time || '',
+              bingoPrize,
+              ternaPrize
             });
           }
         }
@@ -485,13 +562,14 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       })
       .on('broadcast', { event: 'approve-tx' }, (payload) => {
-        const { playerName, quantity } = payload.payload;
-        // Generate local cards for the matching player tab
+        const { playerName, lines } = payload.payload;
+        // Generate local cards representing purchased lines for the matching player tab
         if (roleRef.current === 'player' && playerNameRef.current === playerName) {
           const cards: BingoCard[] = [];
-          for (let i = 0; i < quantity; i++) {
-            cards.push(generateBingoCard());
-          }
+          const linesToGen = lines || [];
+          linesToGen.forEach((lineNum: number) => {
+            cards.push(generateLineCard(lineNum));
+          });
           setPlayerCards(prevCards => [...prevCards, ...cards]);
         }
       })
@@ -672,12 +750,17 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 // If it is this player tab who matches the purchaser, generate the digital cards!
                 if (playerNameRef.current === data.playerName) {
                   const cards: BingoCard[] = [];
-                  for (let i = 0; i < data.quantity; i++) {
-                    cards.push(generateBingoCard());
-                  }
+                  const linesToGen = data.lines || [];
+                  linesToGen.forEach((lineNum: number) => {
+                    cards.push(generateLineCard(lineNum));
+                  });
                   setPlayerCards(prevCards => [...prevCards, ...cards]);
                 }
-                return { ...tx, status: 'approved' };
+                const receiptData = JSON.stringify({
+                  lines: data.lines || [],
+                  receipt: parseReceiptData(tx.paymentReceipt).receipt
+                });
+                return { ...tx, status: 'approved', paymentReceipt: receiptData };
               }
               return tx;
             })
@@ -1132,6 +1215,26 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       }
 
+      // 1. Fetch historical transactions to know which lines are sold/reserved
+      const { data: txList } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('room_id', formattedId);
+      
+      if (txList) {
+        setPendingTransactions(txList.map((tx: any) => ({
+          id: tx.id,
+          playerName: tx.player_name,
+          quantity: tx.quantity,
+          amount: tx.amount,
+          status: tx.status,
+          paymentReceipt: tx.payment_receipt,
+          timestamp: new Date(tx.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        })));
+      }
+
+      const { bingoPrize, ternaPrize } = parsePayoutAmount(data.payout_amount || '');
+
       setGameConfigState({
         gameName: data.game_name,
         cardPrice: data.card_price,
@@ -1141,7 +1244,9 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         qrCode,
         payoutAmount: data.payout_amount,
         startDate: data.start_date,
-        startTime: data.start_time
+        startTime: data.start_time,
+        bingoPrize,
+        ternaPrize
       });
       
       setPlayerCards([]);
@@ -1349,12 +1454,23 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return txId;
   }, [gameId]);
 
-  const approveTransaction = useCallback(async (id: string) => {
+  const approveTransaction = useCallback(async (id: string, assignedLines?: number[]) => {
     const tx = pendingTransactionsRef.current.find(t => t.id === id);
     if (!tx || !gameId) return;
 
+    // Extract original receipt from existing data if possible
+    let originalReceipt: string | undefined = tx.paymentReceipt;
+    const parsedReceipt = parseReceiptData(tx.paymentReceipt);
+    if (parsedReceipt.receipt) originalReceipt = parsedReceipt.receipt;
+
+    const receiptData = JSON.stringify({
+      lines: assignedLines || [],
+      receipt: originalReceipt
+    });
+
     const { error } = await supabase.from('transactions').update({
-      status: 'approved'
+      status: 'approved',
+      payment_receipt: receiptData
     }).eq('id', id);
 
     if (error) {
@@ -1362,20 +1478,19 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
-    // Generate local cards for the player IF the player is on this tab
-    // (We also send a Realtime broadcast to trigger it for the actual player tab)
+    // Generate local cards representing purchased lines for the player IF the player is on this tab
     if (playerNameRef.current === tx.playerName) {
       const cards: BingoCard[] = [];
-      for (let i = 0; i < tx.quantity; i++) {
-        cards.push(generateBingoCard());
-      }
+      (assignedLines || []).forEach(lineNum => {
+        cards.push(generateLineCard(lineNum));
+      });
       setPlayerCards(prevCards => [...prevCards, ...cards]);
     }
 
     supabase.channel(`room-${gameId}`).send({
       type: 'broadcast',
       event: 'approve-tx',
-      payload: { id, playerName: tx.playerName, quantity: tx.quantity }
+      payload: { id, playerName: tx.playerName, quantity: tx.quantity, lines: assignedLines || [] }
     });
 
     // Send confirmation message to chat
@@ -1384,13 +1499,13 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         id: `sys-app-${id}-${Date.now()}`,
         room_id: gameId,
         sender: 'Yappy Pay',
-        text: `✅ Pago Aprobado. ${tx.playerName} recibió ${tx.quantity} cartón(es) digital(es).`,
+        text: `✅ Pago Aprobado. ${tx.playerName} recibió la(s) línea(s): ${(assignedLines || []).join(', ')}.`,
         is_host: true
       });
     }, 100);
 
     setPendingTransactions(prev => 
-      prev.map(t => t.id === id ? { ...t, status: 'approved' } : t)
+      prev.map(t => t.id === id ? { ...t, status: 'approved', paymentReceipt: receiptData } : t)
     );
   }, [gameId]);
 
@@ -1560,6 +1675,9 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const updateGameConfig = useCallback((newConfig: Partial<GameConfig>) => {
     setGameConfigState(prev => {
       const updated = { ...prev, ...newConfig };
+      if (newConfig.bingoPrize !== undefined || newConfig.ternaPrize !== undefined) {
+        updated.payoutAmount = JSON.stringify({ bingo: updated.bingoPrize, terna: updated.ternaPrize });
+      }
       bc.postMessage({ type: 'update-config', config: updated });
       
       if (hostUserRef.current) {

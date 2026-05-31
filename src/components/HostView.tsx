@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useBingo, YappyTransaction } from '../context/BingoContext';
+import { useBingo, YappyTransaction, parseReceiptData, formatPayoutAmount } from '../context/BingoContext';
 import { RotateCcw, Copy, Check, UserCheck, Zap, Video, VideoOff, Award } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -28,6 +28,24 @@ export const HostView: React.FC = () => {
     regenerateRoom
   } = useBingo();
 
+  const getLineOwner = (lineNum: number) => {
+    const tx = pendingTransactions.find(t => {
+      if (t.status !== 'approved') return false;
+      const parsed = parseReceiptData(t.paymentReceipt);
+      return parsed.lines.includes(lineNum);
+    });
+    return tx ? tx.playerName : null;
+  };
+
+  const getLinePendingOwner = (lineNum: number) => {
+    const tx = pendingTransactions.find(t => {
+      if (t.status !== 'pending') return false;
+      const parsed = parseReceiptData(t.paymentReceipt);
+      return parsed.lines.includes(lineNum);
+    });
+    return tx ? tx.playerName : null;
+  };
+
   const [copied, setCopied]             = useState(false);
   const [chatExpanded, setChatExpanded] = useState(false);
   const [chatInput, setChatInput]       = useState('');
@@ -52,6 +70,9 @@ export const HostView: React.FC = () => {
   const [activeAuditTx, setActiveAuditTx] = useState<YappyTransaction | null>(null);
   const [showRejectionInput, setShowRejectionInput] = useState(false);
   const [rejectionReasonText, setRejectionReasonText] = useState('');
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assigningTxId, setAssigningTxId] = useState<string | null>(null);
+  const [selectedLinesForAssign, setSelectedLinesForAssign] = useState<number[]>([]);
   const [hostChatInput, setHostChatInput] = useState('');
   const payoutChatMessagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -70,6 +91,12 @@ export const HostView: React.FC = () => {
       Notification.requestPermission();
     }
   }, []);
+
+  const handleOpenAssignModal = (txId: string) => {
+    setAssigningTxId(txId);
+    setSelectedLinesForAssign([]);
+    setShowAssignModal(true);
+  };
 
   // Reset receipt state on console toggle
   useEffect(() => {
@@ -445,7 +472,7 @@ export const HostView: React.FC = () => {
       shareMsg += `\n`;
     }
     if (gameConfig.payoutAmount) {
-      shareMsg += `🏆 Premio Acumulado: ${gameConfig.payoutAmount} 💰\n`;
+      shareMsg += `🏆 Premio Acumulado: ${formatPayoutAmount(gameConfig.payoutAmount)} 💰\n`;
     }
     shareMsg += `🔗 Enlace de ingreso: ${roomUrl}`;
 
@@ -910,7 +937,9 @@ export const HostView: React.FC = () => {
                     const colConfig = getBallColor(letter);
                     const isDrawn = drawnNumbers.includes(num);
                     const isLast = lastDrawn === num;
-                    
+                    const owner = getLineOwner(rIdx + 1);
+                    const pendingOwner = getLinePendingOwner(rIdx + 1);
+
                     return (
                       <div
                         key={num}
@@ -920,8 +949,8 @@ export const HostView: React.FC = () => {
                           width: '32px',
                           height: '32px',
                           borderRadius: '50%',
-                          border: `2px solid ${colConfig.color}`,
-                          background: isDrawn ? colConfig.bg : 'white',
+                          border: `2px solid ${isLast ? '#c084fc' : isDrawn ? '#a855f7' : colConfig.color}`,
+                          background: isDrawn ? 'linear-gradient(135deg, #a855f7, #6b21a8)' : 'white',
                           color: isDrawn ? 'white' : colConfig.color,
                           display: 'flex',
                           alignItems: 'center',
@@ -930,14 +959,15 @@ export const HostView: React.FC = () => {
                           fontSize: '0.85rem',
                           cursor: isDrawn ? 'not-allowed' : 'pointer',
                           boxShadow: isLast 
-                            ? `0 0 12px ${colConfig.shadow}, inset 0 0 4px rgba(255,255,255,0.6)` 
+                            ? '0 0 15px #c084fc, inset 0 0 4px rgba(255,255,255,0.6)' 
                             : isDrawn 
-                            ? 'none' 
+                            ? '0 0 6px rgba(168, 85, 247, 0.4)' 
                             : 'inset 0 1px 3px rgba(0,0,0,0.1)',
                           transform: isLast ? 'scale(1.18)' : 'scale(1)',
                           animation: isLast ? 'ringPulse 1.5s infinite' : 'none',
                           zIndex: isLast ? 10 : 1,
-                          transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                          transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                          position: 'relative'
                         }}
                         onMouseOver={(e) => {
                           if (!isDrawn) {
@@ -953,6 +983,43 @@ export const HostView: React.FC = () => {
                         }}
                       >
                         {num}
+                        {cIdx === 0 && owner && (
+                          <span style={{
+                            position: 'absolute',
+                            left: '-62px',
+                            background: 'var(--accent-gold)',
+                            color: 'black',
+                            fontSize: '0.55rem',
+                            padding: '0.05rem 0.25rem',
+                            borderRadius: '4px',
+                            fontWeight: 'bold',
+                            whiteSpace: 'nowrap',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                            border: '1px solid #78350f',
+                            zIndex: 5
+                          }}>
+                            👤 {owner.split(' ')[0]}
+                          </span>
+                        )}
+                        {cIdx === 0 && pendingOwner && !owner && (
+                          <span style={{
+                            position: 'absolute',
+                            left: '-62px',
+                            background: '#fbbf24',
+                            color: 'black',
+                            fontSize: '0.55rem',
+                            padding: '0.05rem 0.25rem',
+                            borderRadius: '4px',
+                            fontWeight: 'bold',
+                            whiteSpace: 'nowrap',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                            border: '1px solid #78350f',
+                            zIndex: 5,
+                            opacity: 0.85
+                          }}>
+                            ⏳ {pendingOwner.split(' ')[0]}
+                          </span>
+                        )}
                       </div>
                     );
                   });
@@ -996,7 +1063,7 @@ export const HostView: React.FC = () => {
                           <>
                             <button 
                               className="btn-primary" 
-                              onClick={() => approveTransaction(tx.id)} 
+                              onClick={() => handleOpenAssignModal(tx.id)} 
                               style={{ flex: 1, padding: '0.25rem 0.5rem', fontSize: '0.7rem', borderRadius: '4px', justifyContent: 'center' }}
                             >
                               Aprobar y Emitir
@@ -1143,7 +1210,7 @@ export const HostView: React.FC = () => {
 
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Precio Cartón ($)</label>
+                <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Precio por Línea ($)</label>
                 <input
                   type="number"
                   min="0.5"
@@ -1252,16 +1319,33 @@ export const HostView: React.FC = () => {
               )}
             </div>
 
-            {/* Cuánto paga el Bingo (Premio) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-              <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Premio del Bingo (Monto a Pagar)</label>
-              <input
-                type="text"
-                value={gameConfig.payoutAmount}
-                onChange={(e) => updateGameConfig({ payoutAmount: e.target.value })}
-                placeholder="Ej: $150.00 USD"
-                style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '0.75rem', padding: '0.3rem 0.5rem', color: 'white', outline: 'none' }}
-              />
+            {/* Configuración de Premios */}
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Premio de Bingo ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={gameConfig.bingoPrize}
+                  onChange={(e) => updateGameConfig({ bingoPrize: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                  placeholder="Ej: 20"
+                  style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '0.75rem', padding: '0.3rem 0.5rem', color: 'white', outline: 'none', width: '100%' }}
+                />
+              </div>
+
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Premio de Terna ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={gameConfig.ternaPrize}
+                  onChange={(e) => updateGameConfig({ ternaPrize: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                  placeholder="Ej: 5"
+                  style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '0.75rem', padding: '0.3rem 0.5rem', color: 'white', outline: 'none', width: '100%' }}
+                />
+              </div>
             </div>
 
             {/* Programación de Fecha y Hora de Inicio */}
@@ -1593,7 +1677,7 @@ export const HostView: React.FC = () => {
                       <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#0088cc' }}>Yappy Panamá 📱</div>
                       
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.6rem' }}>MONTO A TRANSFERIR:</div>
-                      <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#10b981' }}>{gameConfig.payoutAmount || '$150.00 USD'}</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#10b981' }}>{formatPayoutAmount(gameConfig.payoutAmount) || '$150.00 USD'}</div>
                     </div>
                     {details.yappyQrCode && (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
@@ -1615,7 +1699,7 @@ export const HostView: React.FC = () => {
                     </div>
                     <div>
                       <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>MONTO A TRANSFERIR:</span>
-                      <div style={{ fontSize: '0.95rem', fontWeight: 900, color: '#10b981' }}>{gameConfig.payoutAmount || '$150.00 USD'}</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 900, color: '#10b981' }}>{formatPayoutAmount(gameConfig.payoutAmount) || '$150.00 USD'}</div>
                     </div>
                     <div style={{ gridColumn: 'span 2' }}>
                       <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>BENEFICIARIO:</span>
@@ -1949,9 +2033,8 @@ export const HostView: React.FC = () => {
                     <button 
                       className="btn-primary" 
                       onClick={() => {
-                        approveTransaction(activeAuditTx.id);
+                        handleOpenAssignModal(activeAuditTx.id);
                         setActiveAuditTx(null);
-                        triggerToast('¡Pago de Yappy aprobado y cartones emitidos!');
                       }}
                       style={{ flex: 1.5, padding: '0.45rem', fontSize: '0.8rem', background: 'var(--success)', borderColor: 'var(--success)', color: 'white', justifyContent: 'center' }}
                     >
@@ -2018,6 +2101,178 @@ export const HostView: React.FC = () => {
           />
         </div>
       )}
+
+      {/* ── Line Assignment Modal ── */}
+      {showAssignModal && assigningTxId && (() => {
+        const tx = pendingTransactions.find(t => t.id === assigningTxId);
+        if (!tx) return null;
+
+        // Parse lines from other approved/pending transactions to see which are occupied
+        const soldLines: Record<number, string> = {};
+        const pendingLines: Record<number, string> = {};
+        
+        pendingTransactions.forEach(t => {
+          if (t.id === assigningTxId) return;
+          const parsed = parseReceiptData(t.paymentReceipt);
+          parsed.lines.forEach((lineNum: number) => {
+            if (t.status === 'approved') {
+              soldLines[lineNum] = t.playerName;
+            } else if (t.status === 'pending') {
+              pendingLines[lineNum] = t.playerName;
+            }
+          });
+        });
+
+        const toggleLineSelection = (lineNum: number) => {
+          setSelectedLinesForAssign(prev => {
+            if (prev.includes(lineNum)) {
+              return prev.filter(l => l !== lineNum);
+            }
+            if (prev.length >= tx.quantity) {
+              return [...prev.slice(1), lineNum];
+            }
+            return [...prev, lineNum];
+          });
+        };
+
+        const handleConfirm = () => {
+          if (selectedLinesForAssign.length !== tx.quantity) {
+            alert(`Debes asignar exactamente ${tx.quantity} línea(s) para este pago.`);
+            return;
+          }
+          approveTransaction(tx.id, selectedLinesForAssign);
+          setShowAssignModal(false);
+          setAssigningTxId(null);
+          triggerToast(`¡Pago aprobado y línea(s) ${selectedLinesForAssign.join(', ')} asignada(s) con éxito!`);
+        };
+
+        return (
+          <div className="yappy-modal-overlay" style={{ zIndex: 10000 }}>
+            <div className="yappy-card" style={{ maxWidth: '520px', width: '90%', maxHeight: '90vh', overflowY: 'auto', background: 'var(--bg-secondary)', border: '2px solid var(--accent-gold)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', color: 'white', boxShadow: '0 20px 40px rgba(0,0,0,0.8)' }}>
+              
+              <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.6rem', textAlign: 'left' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--accent-gold)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  🎯 Asignar Líneas a {tx.playerName}
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  El jugador pagó <strong>${tx.amount.toFixed(2)} USD</strong> y solicitó <strong>{tx.quantity} línea(s)</strong>.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'left' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>
+                  Selecciona {tx.quantity} línea(s) de la lista ({selectedLinesForAssign.length} de {tx.quantity} seleccionadas):
+                </span>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '320px', overflowY: 'auto', paddingRight: '0.2rem' }}>
+                  {Array.from({ length: 15 }).map((_, idx) => {
+                    const lineNum = idx + 1;
+                    const owner = soldLines[lineNum];
+                    const reserver = pendingLines[lineNum];
+                    const isSold = !!owner;
+                    const isReserved = !!reserver;
+                    const isSelected = selectedLinesForAssign.includes(lineNum);
+                    
+                    let statusLabel = '';
+                    let btnBg = 'rgba(255,255,255,0.02)';
+                    let btnBorder = '1px solid var(--border-color)';
+                    let textColor = 'white';
+                    let cursorStyle = 'pointer';
+                    let isDisabled = false;
+
+                    if (isSold) {
+                      statusLabel = `Ocupada por ${owner}`;
+                      btnBg = 'rgba(239, 68, 68, 0.05)';
+                      btnBorder = '1px solid rgba(239, 68, 68, 0.25)';
+                      textColor = '#f87171';
+                      cursorStyle = 'not-allowed';
+                      isDisabled = true;
+                    } else if (isReserved) {
+                      statusLabel = `Reservada por ${reserver}`;
+                      btnBg = 'rgba(245, 158, 11, 0.05)';
+                      btnBorder = '1px solid rgba(245, 158, 11, 0.25)';
+                      textColor = '#fbbf24';
+                      cursorStyle = 'not-allowed';
+                      isDisabled = true;
+                    } else if (isSelected) {
+                      btnBg = 'rgba(245, 158, 11, 0.15)';
+                      btnBorder = '2px solid var(--accent-gold)';
+                      textColor = 'var(--accent-gold)';
+                    }
+
+                    return (
+                      <button
+                        key={lineNum}
+                        disabled={isDisabled}
+                        onClick={() => toggleLineSelection(lineNum)}
+                        style={{
+                          background: btnBg,
+                          border: btnBorder,
+                          borderRadius: '8px',
+                          padding: '0.45rem 0.75rem',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          cursor: cursorStyle,
+                          color: textColor,
+                          outline: 'none',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                          <span style={{
+                            width: '24px', height: '24px', borderRadius: '50%',
+                            background: isSelected ? 'var(--accent-gold)' : 'rgba(255,255,255,0.08)',
+                            color: isSelected ? 'black' : 'white',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '0.72rem', fontWeight: 'bold'
+                          }}>
+                            {lineNum}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>
+                            {lineNum}, {lineNum + 15}, {lineNum + 30}, {lineNum + 45}, {lineNum + 60}
+                          </span>
+                        </div>
+                        {statusLabel && <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>{statusLabel}</span>}
+                        {isSelected && !statusLabel && <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>ASIGNADA ✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    setShowAssignModal(false);
+                    setAssigningTxId(null);
+                  }}
+                  style={{ flex: 1, padding: '0.45rem', fontSize: '0.8rem', justifyContent: 'center', borderColor: 'rgba(255,255,255,0.15)' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="btn-primary"
+                  disabled={selectedLinesForAssign.length !== tx.quantity}
+                  onClick={handleConfirm}
+                  style={{
+                    flex: 1.5, padding: '0.45rem', fontSize: '0.8rem',
+                    background: selectedLinesForAssign.length === tx.quantity ? 'var(--success)' : 'rgba(255,255,255,0.05)',
+                    borderColor: selectedLinesForAssign.length === tx.quantity ? 'var(--success)' : 'rgba(255,255,255,0.08)',
+                    color: selectedLinesForAssign.length === tx.quantity ? 'white' : 'rgba(255,255,255,0.2)',
+                    cursor: selectedLinesForAssign.length === tx.quantity ? 'pointer' : 'not-allowed',
+                    justifyContent: 'center'
+                  }}
+                >
+                  Confirmar Asignación
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Toast Alert Div */}
       {toastMessage && <div className="toast-notification">{toastMessage}</div>}
