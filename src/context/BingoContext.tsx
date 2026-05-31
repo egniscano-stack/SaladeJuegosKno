@@ -15,7 +15,7 @@ export interface BingoCard {
   matrix: (number | null)[][]; // 5x5 grid, null for FREE space
   marked: boolean[][]; // 5x5 marked status
   isWinner: boolean;
-  type?: 'Bingo' | 'Línea' | null;
+  type?: 'Bingo' | 'Línea' | 'Terna' | 'Cajón' | null;
 }
 
 export interface YappyTransaction {
@@ -124,7 +124,7 @@ interface BingoContextType {
   buyCards: (quantity: number, playerName: string, paymentReceipt?: string) => Promise<string>; // Returns transaction ID
   approveTransaction: (id: string) => Promise<void>;
   rejectTransaction: (id: string, reason: string) => Promise<void>;
-  claimBingo: (cardId: string, playerName: string) => { won: boolean; type: 'Bingo' | 'Línea' | null };
+  claimBingo: (cardId: string, playerName: string) => { won: boolean; type: 'Bingo' | 'Línea' | 'Terna' | 'Cajón' | null };
   gameConfig: GameConfig;
   updateGameConfig: (config: Partial<GameConfig>) => void;
   pendingClaims: BingoClaim[];
@@ -1453,30 +1453,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (completed) rowsWon++;
     }
 
-    // Check cols
-    let colsWon = 0;
-    for (let c = 0; c < 5; c++) {
-      let completed = true;
-      for (let r = 0; r < 5; r++) {
-        const val = card.matrix[r][c];
-        if (!isNumberValid(val) || !card.marked[r][c]) {
-          completed = false;
-          break;
-        }
-      }
-      if (completed) colsWon++;
-    }
 
-    // Check diagonals
-    let diag1Won = true;
-    let diag2Won = true;
-    for (let i = 0; i < 5; i++) {
-      if (!isNumberValid(card.matrix[i][i]) || !card.marked[i][i]) diag1Won = false;
-      if (!isNumberValid(card.matrix[i][4 - i]) || !card.marked[i][4 - i]) diag2Won = false;
-    }
-
-    const hasLine = rowsWon > 0 || colsWon > 0 || diag1Won || diag2Won;
-    
     // Check Full Bingo (all elements marked, except the center free spaces if not marked)
     let totalCellsToWin = 24; // 25 - free center
     let markedCellsCorrect = 0;
@@ -1491,15 +1468,66 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     const hasBingo = markedCellsCorrect === totalCellsToWin;
 
-    let winType: 'Bingo' | 'Línea' | null = null;
+    // Check Terna (3 matches in any horizontal row)
+    let ternaWon = false;
+    for (let r = 0; r < 5; r++) {
+      let count = 0;
+      for (let c = 0; c < 5; c++) {
+        const val = card.matrix[r][c];
+        if (isNumberValid(val) && card.marked[r][c]) {
+          count++;
+        }
+      }
+      if (count >= 3) {
+        ternaWon = true;
+        break;
+      }
+    }
+
+    // Check Cajón (outer border completed)
+    let cajonWon = true;
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 5; c++) {
+        if (r === 0 || r === 4 || c === 0 || c === 4) {
+          const val = card.matrix[r][c];
+          if (!isNumberValid(val) || !card.marked[r][c]) {
+            cajonWon = false;
+            break;
+          }
+        }
+      }
+      if (!cajonWon) break;
+    }
+
+    // Horizontal Line only
+    const hasHorizontalLine = rowsWon > 0;
+
+    let winType: 'Bingo' | 'Línea' | 'Terna' | 'Cajón' | null = null;
     let won = false;
 
-    if (hasBingo) {
+    const currentMechanic = gameConfigRef.current.winningMechanic;
+
+    if (currentMechanic === 'full' && hasBingo) {
       winType = 'Bingo';
       won = true;
-    } else if (hasLine) {
+    } else if (currentMechanic === 'line' && hasHorizontalLine) {
       winType = 'Línea';
       won = true;
+    } else if (currentMechanic === 'terna' && ternaWon) {
+      winType = 'Terna';
+      won = true;
+    } else if (currentMechanic === 'cajon' && cajonWon) {
+      winType = 'Cajón';
+      won = true;
+    } else {
+      // Fallback: If for some reason the mechanic is not matched, check anyway
+      if (hasBingo) {
+        winType = 'Bingo';
+        won = true;
+      } else if (hasHorizontalLine) {
+        winType = 'Línea';
+        won = true;
+      }
     }
 
     if (won && winType) {
@@ -1589,7 +1617,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const winTypeString = 
       gameConfig.winningMechanic === 'full' ? 'Cartón Lleno' :
       gameConfig.winningMechanic === 'cajon' ? 'Cajón' :
-      gameConfig.winningMechanic === 'terna' ? 'Terna' : 'Línea';
+      gameConfig.winningMechanic === 'terna' ? 'Terna' : 'Línea Horizontal';
 
     const claimId = `claim-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
 

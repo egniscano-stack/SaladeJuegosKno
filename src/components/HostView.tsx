@@ -32,9 +32,12 @@ export const HostView: React.FC = () => {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [chatInput, setChatInput]       = useState('');
   const [stream, setStream]             = useState<MediaStream | null>(null);
-  const [cameras, setCameras]           = useState<MediaDeviceInfo[]>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('environment'); // 'environment' = trasera
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Automatic draw states
+  const [isAutoDrawing, setIsAutoDrawing] = useState(false);
+  const autoDrawIntervalRef = useRef<any>(null);
+  const [autoDrawSpeed, setAutoDrawSpeed] = useState(6); // Default 6 seconds
 
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -296,36 +299,15 @@ export const HostView: React.FC = () => {
     };
     reader.readAsDataURL(file);
   };
-  const videoRef           = useRef<HTMLVideoElement>(null);
-  const canvasRef          = useRef<HTMLCanvasElement>(null);
   const lastDrawnRef       = useRef(lastDrawn);
-  const logoImageRef       = useRef<HTMLImageElement | null>(null);
 
   const latestMessage = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
 
   useEffect(() => { lastDrawnRef.current = lastDrawn; }, [lastDrawn]);
 
   useEffect(() => {
-    if (gameConfig.customLogo) {
-      const img = new Image();
-      img.src = gameConfig.customLogo;
-      img.onload = () => {
-        logoImageRef.current = img;
-      };
-    } else {
-      logoImageRef.current = null;
-    }
-  }, [gameConfig.customLogo]);
-  useEffect(() => {
     if (chatExpanded) chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, chatExpanded]);
-
-  // ── Bind webcam stream to hidden video element ──
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-    }
-  }, [stream]);
 
   // ── Broadcast audio tracks in real-time using Raw PCM Web Audio API ──
   useEffect(() => {
@@ -411,189 +393,6 @@ export const HostView: React.FC = () => {
     };
   }, [isStreaming, stream]);
 
-  // ── BroadcastChannel: broadcast clean HD video frames ──
-  useEffect(() => {
-    const bc = new BroadcastChannel('bingo-kno-stream-channel');
-
-    if (!isStreaming) {
-      bc.postMessage({ frame: null });
-      bc.close();
-      return;
-    }
-
-    const video = videoRef.current;
-    let frameCount = 0;
-
-    const interval = setInterval(() => {
-      const canvas = document.createElement('canvas');
-      canvas.width  = 1280;
-      canvas.height = 720;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      frameCount++;
-
-      if (stream && video && video.readyState >= 2) {
-        // ── Clean HD webcam feed ──
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // Subtle scanlines for broadcast feel
-        ctx.fillStyle = 'rgba(0,0,0,0.04)';
-        for (let y = 0; y < canvas.height; y += 4) ctx.fillRect(0, y, canvas.width, 1.5);
-
-        // REC indicator
-        const blink = Math.floor(frameCount / 5) % 2 === 0;
-        ctx.fillStyle = blink ? 'rgba(239,68,68,0.95)' : 'rgba(239,68,68,0.2)';
-        ctx.beginPath(); ctx.arc(36, 36, 9, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.9)';
-        ctx.font = 'bold 14px Outfit, sans-serif';
-        ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-        ctx.fillText('● LIVE HD', 54, 36);
-
-        // Timestamp
-        ctx.fillStyle = 'rgba(255,255,255,0.65)';
-        ctx.font = '12px Courier New, monospace';
-        ctx.fillText(new Date().toLocaleTimeString(), 54, 57);
-
-        // Copy to visible preview canvas
-        const domCanvas = canvasRef.current;
-        if (domCanvas) {
-          domCanvas.width = 960; domCanvas.height = 540;
-          const dc = domCanvas.getContext('2d');
-          if (dc) dc.drawImage(canvas, 0, 0, 960, 540);
-        }
-
-      } else {
-        // ── No webcam: elegant waiting screen ──
-        const g = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-        g.addColorStop(0, '#0d0a1f'); g.addColorStop(1, '#050311');
-        ctx.fillStyle = g; ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Grid
-        ctx.strokeStyle = 'rgba(139,92,246,0.08)'; ctx.lineWidth = 1;
-        const offset = (frameCount * 2) % 60;
-        for (let x = offset; x < canvas.width; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
-        for (let y = offset; y < canvas.height; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
-
-        // Render circular logo in the waiting stream
-        const logoX = canvas.width / 2;
-        const logoY = canvas.height / 2 - 90;
-        const logoRadius = 70;
-
-        if (logoImageRef.current) {
-          try {
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(logoX, logoY, logoRadius, 0, Math.PI * 2);
-            ctx.clip();
-            ctx.drawImage(logoImageRef.current, logoX - logoRadius, logoY - logoRadius, logoRadius * 2, logoRadius * 2);
-            ctx.restore();
-            
-            // Neon glowing circular border around the custom photo logo
-            ctx.shadowColor = 'rgba(139, 92, 246, 0.8)';
-            ctx.shadowBlur = 15;
-            ctx.strokeStyle = 'rgba(192, 132, 252, 0.8)';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.arc(logoX, logoY, logoRadius, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.shadowBlur = 0; // reset
-          } catch (e) {
-            console.error('Error drawing custom logo inside wait screen canvas:', e);
-          }
-        } else {
-          // Fallback circular initials logo inside the wait screen
-          ctx.shadowColor = 'rgba(139, 92, 246, 0.5)';
-          ctx.shadowBlur = 10;
-          ctx.fillStyle = 'linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%)';
-          // Draw standard solid gradient circle
-          const gradient = ctx.createLinearGradient(logoX - logoRadius, logoY - logoRadius, logoX + logoRadius, logoY + logoRadius);
-          gradient.addColorStop(0, '#8b5cf6');
-          gradient.addColorStop(1, '#d946ef');
-          ctx.fillStyle = gradient;
-          ctx.beginPath();
-          ctx.arc(logoX, logoY, logoRadius, 0, Math.PI * 2);
-          ctx.fill();
-          
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          ctx.shadowBlur = 0; // reset
-
-          // Text Initials inside circle
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillStyle = 'white';
-          ctx.font = 'bold 44px Outfit, sans-serif';
-          const initials = gameConfig.gameName !== 'Bingo-KNO' 
-            ? gameConfig.gameName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() 
-            : 'BK';
-          ctx.fillText(initials, logoX, logoY);
-        }
-
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = 'rgba(192,132,252,0.95)';
-        ctx.font = 'bold 32px Outfit, sans-serif';
-        ctx.fillText(`${gameConfig.gameName.toUpperCase()} · EN VIVO`, canvas.width / 2, canvas.height / 2 + 35);
-        
-        ctx.fillStyle = 'rgba(255,255,255,0.45)';
-        ctx.font = '16px Outfit, sans-serif';
-        ctx.fillText('Activa la cámara para iniciar transmisión', canvas.width / 2, canvas.height / 2 + 75);
-
-        const domCanvas = canvasRef.current;
-        if (domCanvas) {
-          domCanvas.width = 960; domCanvas.height = 540;
-          const dc = domCanvas.getContext('2d');
-          if (dc) dc.drawImage(canvas, 0, 0, 960, 540);
-        }
-      }
-
-      bc.postMessage({ frame: canvas.toDataURL('image/jpeg', 0.88) });
-
-      // Broadcast highly compressed small frame to Supabase Realtime for remote players at ~4 FPS (every 3 frames)
-      if (frameCount % 3 === 0) {
-        const sbCanvas = document.createElement('canvas');
-        sbCanvas.width = 480;
-        sbCanvas.height = 270;
-        const sbCtx = sbCanvas.getContext('2d');
-        if (sbCtx) {
-          sbCtx.drawImage(canvas, 0, 0, 480, 270);
-          const base64Comp = sbCanvas.toDataURL('image/jpeg', 0.4);
-          supabase.channel(`room-${gameId}`).send({
-            type: 'broadcast',
-            event: 'stream-frame',
-            payload: { frame: base64Comp }
-          }).catch(e => console.error('Error broadcasting stream frame:', e));
-        }
-      }
-    }, 80); // ~12 FPS broadcast
-
-    return () => { clearInterval(interval); bc.postMessage({ frame: null }); bc.close(); };
-  }, [isStreaming, stream]);
-
-  // ── Enumerate cameras on mount ──
-  useEffect(() => {
-    const loadCameras = async () => {
-      try {
-        // Request permission first so labels are populated
-        await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop()));
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(d => d.kind === 'videoinput');
-        setCameras(videoDevices);
-        // Prefer rear camera by default on mobile
-        const rear = videoDevices.find(d =>
-          d.label.toLowerCase().includes('back') ||
-          d.label.toLowerCase().includes('rear') ||
-          d.label.toLowerCase().includes('trasera') ||
-          d.label.toLowerCase().includes('environment')
-        );
-        if (rear) setSelectedCameraId(rear.deviceId);
-      } catch {
-        // Camera not available, will use placeholder
-      }
-    };
-    loadCameras();
-  }, []);
-
   // ── Stream handlers ──
   const handleStartStream = async () => {
     try {
@@ -611,20 +410,14 @@ export const HostView: React.FC = () => {
         }
       }
 
-      // Build video constraints: if selectedCameraId is 'environment' or 'user', use facingMode
-      const isKeyword = selectedCameraId === 'environment' || selectedCameraId === 'user';
-      const videoConstraints = isKeyword
-        ? { facingMode: selectedCameraId, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
-        : { deviceId: { exact: selectedCameraId }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
-
       const ms = await navigator.mediaDevices.getUserMedia({
-        video: videoConstraints,
+        video: false,
         audio: true
       });
       setStream(ms);
       setIsStreaming(true);
     } catch {
-      setIsStreaming(true); // no cam → branded placeholder
+      setIsStreaming(true); // no mic/audio -> fallback stream state
     }
   };
 
@@ -661,6 +454,48 @@ export const HostView: React.FC = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const startAutoDraw = () => {
+    if (isAutoDrawing) return;
+    setIsAutoDrawing(true);
+    triggerToast('▶️ Extracción automática iniciada.');
+    
+    // Draw the first number immediately
+    drawNumber();
+    
+    autoDrawIntervalRef.current = setInterval(() => {
+      drawNumber().then((res) => {
+        if (res === null) {
+          stopAutoDraw();
+          triggerToast('🏁 Juego terminado: Todas las balotas cantadas.');
+        }
+      });
+    }, autoDrawSpeed * 1000);
+  };
+
+  const stopAutoDraw = () => {
+    setIsAutoDrawing(false);
+    if (autoDrawIntervalRef.current) {
+      clearInterval(autoDrawIntervalRef.current);
+      autoDrawIntervalRef.current = null;
+    }
+    triggerToast('⏸️ Extracción automática en pausa.');
+  };
+
+  const handleReset = () => {
+    stopAutoDraw();
+    resetGame();
+    triggerToast('🔄 Partida reiniciada.');
+  };
+
+  // Clear auto-draw on unmount
+  useEffect(() => {
+    return () => {
+      if (autoDrawIntervalRef.current) {
+        clearInterval(autoDrawIntervalRef.current);
+      }
+    };
+  }, []);
+
   const getBallLetter = (num: number) => {
     if (num >= 1  && num <= 15) return 'B';
     if (num >= 16 && num <= 30) return 'I';
@@ -671,12 +506,12 @@ export const HostView: React.FC = () => {
 
   const getBallColor = (letter: string) => {
     switch (letter) {
-      case 'B': return { bg: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', shadow: '#3b82f6' };
-      case 'I': return { bg: 'linear-gradient(135deg,#f59e0b,#d97706)', shadow: '#f59e0b' };
-      case 'N': return { bg: 'linear-gradient(135deg,#10b981,#059669)', shadow: '#10b981' };
-      case 'G': return { bg: 'linear-gradient(135deg,#ec4899,#be185d)', shadow: '#ec4899' };
-      case 'O': return { bg: 'linear-gradient(135deg,#f97316,#c2410c)', shadow: '#f97316' };
-      default:  return { bg: 'linear-gradient(135deg,#6b7280,#374151)', shadow: '#6b7280' };
+      case 'B': return { bg: 'linear-gradient(135deg, #00b0ff, #0088cc)', shadow: '#00b0ff', color: '#0088cc' };
+      case 'I': return { bg: 'linear-gradient(135deg, #ff4d4d, #ef4444)', shadow: '#ef4444', color: '#ef4444' };
+      case 'N': return { bg: 'linear-gradient(135deg, #a8a29e, #78716c)', shadow: '#78716c', color: '#78716c' };
+      case 'G': return { bg: 'linear-gradient(135deg, #4ade80, #22c55e)', shadow: '#22c55e', color: '#22c55e' };
+      case 'O': return { bg: 'linear-gradient(135deg, #facc15, #eab308)', shadow: '#eab308', color: '#eab308' };
+      default:  return { bg: 'linear-gradient(135deg, #6b7280, #374151)', shadow: '#6b7280', color: '#6b7280' };
     }
   };
 
@@ -727,149 +562,412 @@ export const HostView: React.FC = () => {
       {/* ── Main layout ── */}
       <div className="player-layout-grid">
 
-        {/* ══ LEFT COLUMN: LIVE Stream Preview + Bolas ══ */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* ══ LEFT COLUMN: BINGO 75 BOARD DASHBOARD ══ */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', flex: 1 }}>
 
-          {/* ── LIVE Camera Panel ── */}
-          <div className="panel-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <h3 className="panel-title" style={{ fontSize: '0.9rem' }}>
-                <Video size={14} className="text-violet-400" /> Transmisión en Vivo
-              </h3>
-              {isStreaming && <span className="badge-live" style={{ fontSize: '0.6rem', padding: '0.1rem 0.4rem' }}><span className="voice-status-dot" />LIVE HD</span>}
-            </div>
+          {/* Bingo 75 Board Wrapper */}
+          <div style={{
+            background: '#f3e8c9',
+            borderRadius: '16px',
+            border: '4px solid #b45309',
+            padding: '1rem',
+            display: 'flex',
+            flexDirection: 'row',
+            gap: '1rem',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+            flexWrap: 'wrap' // Wrap on mobile
+          }}>
+            
+            {/* Left Control Panel (Retro style red containers) */}
+            <div style={{
+              flex: '1 1 280px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.8rem',
+              alignItems: 'stretch'
+            }}>
+              
+              {/* Banner Container */}
+              <div style={{
+                background: '#991b1b',
+                border: '2px solid #b45309',
+                borderRadius: '8px',
+                padding: '0.6rem 0.5rem',
+                textAlign: 'center',
+                boxShadow: '0 4px 8px rgba(0,0,0,0.3)'
+              }}>
+                <h2 style={{
+                  margin: 0,
+                  fontSize: '1.8rem',
+                  fontWeight: 'bold',
+                  color: '#facc15',
+                  textShadow: '2px 2px 0px #7f1d1d',
+                  fontFamily: '"Outfit", sans-serif',
+                  letterSpacing: '1px'
+                }}>
+                  {gameConfig.gameName.toUpperCase() !== 'BINGO-KNO' ? gameConfig.gameName.toUpperCase() : 'BINGO 75'}
+                </h2>
+              </div>
 
-            {/* Preview (hidden video + visible canvas) */}
-            <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', background: '#000', aspectRatio: '16/9' }}>
-              <video ref={videoRef} autoPlay playsInline muted style={{ display: 'none' }} />
-              {isStreaming
-                ? <canvas ref={canvasRef} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                : <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'linear-gradient(135deg,#0d0a1f,#050311)', minHeight: '120px' }}>
-                    <VideoOff size={28} style={{ color: 'rgba(255,255,255,0.2)' }} />
-                    <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)' }}>Transmisión inactiva</span>
+              {/* Extraction Display (Pantalla de Balota Actual) */}
+              <div style={{
+                background: '#7f1d1d',
+                border: '3px solid #b45309',
+                borderRadius: '10px',
+                padding: '1rem',
+                minHeight: '140px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.5), 0 4px 8px rgba(0,0,0,0.3)',
+                position: 'relative'
+              }}>
+                {lastDrawn ? (() => {
+                  const letter = getBallLetter(lastDrawn);
+                  const colConfig = getBallColor(letter);
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#facc15', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Última Balota</span>
+                      <div style={{
+                        width: '82px',
+                        height: '82px',
+                        borderRadius: '50%',
+                        background: colConfig.bg,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: `0 8px 20px rgba(0,0,0,0.6), inset -8px -8px 16px rgba(0,0,0,0.4), inset 8px 8px 16px rgba(255,255,255,0.4), 0 0 15px ${colConfig.shadow}`,
+                        animation: 'ballPopBig 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                        border: '2px solid rgba(255,255,255,0.35)'
+                      }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 900, color: 'rgba(255,255,255,0.85)', lineHeight: 1, textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>{letter}</span>
+                        <span style={{ fontSize: '2.1rem', fontWeight: 950, color: 'white', lineHeight: 1, textShadow: '2px 2px 4px rgba(0,0,0,0.6)' }}>{lastDrawn}</span>
+                      </div>
+                    </div>
+                  );
+                })() : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', opacity: 0.8 }}>
+                    <RotateCcw size={28} style={{ color: '#eedba2', animation: 'spin 8s linear infinite' }} />
+                    <span style={{ fontSize: '0.7rem', color: '#eedba2', fontWeight: 'bold', letterSpacing: '0.5px' }}>ESPERANDO BALOTA...</span>
                   </div>
-              }
-            </div>
-
-            {/* Camera Selector */}
-            {!isStreaming && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>📷 Cámara</label>
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  {/* Quick toggle: frontal / trasera */}
-                  <button
-                    onClick={() => setSelectedCameraId('environment')}
-                    style={{
-                      flex: 1, padding: '0.35rem', fontSize: '0.7rem', borderRadius: '6px', border: '1px solid',
-                      borderColor: selectedCameraId === 'environment' ? 'var(--accent)' : 'var(--border-color)',
-                      background: selectedCameraId === 'environment' ? 'rgba(139,92,246,0.15)' : 'transparent',
-                      color: selectedCameraId === 'environment' ? 'var(--accent)' : 'var(--text-secondary)',
-                      cursor: 'pointer', transition: 'all 0.2s'
-                    }}
-                  >📷 Trasera</button>
-                  <button
-                    onClick={() => setSelectedCameraId('user')}
-                    style={{
-                      flex: 1, padding: '0.35rem', fontSize: '0.7rem', borderRadius: '6px', border: '1px solid',
-                      borderColor: selectedCameraId === 'user' ? 'var(--accent)' : 'var(--border-color)',
-                      background: selectedCameraId === 'user' ? 'rgba(139,92,246,0.15)' : 'transparent',
-                      color: selectedCameraId === 'user' ? 'var(--accent)' : 'var(--text-secondary)',
-                      cursor: 'pointer', transition: 'all 0.2s'
-                    }}
-                  >🤳 Frontal</button>
-                </div>
-                {/* Full device list (if browser returns labels) */}
-                {cameras.length > 0 && (
-                  <select
-                    value={selectedCameraId}
-                    onChange={e => setSelectedCameraId(e.target.value)}
-                    style={{
-                      width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.7rem', borderRadius: '6px',
-                      border: '1px solid var(--border-color)', background: 'var(--surface-card)',
-                      color: 'var(--text-primary)', cursor: 'pointer'
-                    }}
-                  >
-                    <option value="environment">📷 Cámara Trasera (automática)</option>
-                    <option value="user">🤳 Cámara Frontal (automática)</option>
-                    {cameras.map(cam => (
-                      <option key={cam.deviceId} value={cam.deviceId}>
-                        {cam.label || `Cámara ${cameras.indexOf(cam) + 1}`}
-                      </option>
-                    ))}
-                  </select>
                 )}
               </div>
-            )}
 
-            {/* Controls */}
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              {isStreaming
-                ? <button className="btn-secondary" onClick={handleStopStream} style={{ flex: 1, padding: '0.4rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', borderColor: 'var(--danger)', color: 'var(--danger)' }}>
-                    <VideoOff size={12} /> Detener Live
-                  </button>
-                : <button className="btn-primary" onClick={handleStartStream} style={{ flex: 1, padding: '0.4rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}>
-                    <Video size={12} /> Iniciar Live HD
-                  </button>
-              }
-            </div>
-          </div>
-
-          {/* ── Tabla General de Bolas (clickable) ── */}
-          <div className="panel-card" style={{ padding: '0.75rem' }}>
-            <div className="panel-header" style={{ padding: '0.5rem 0.25rem', borderBottom: '1px solid var(--border-color)', marginBottom: '0.6rem' }}>
-              <h3 className="panel-title" style={{ fontSize: '1rem' }}>
-                <Zap size={16} className="text-amber-400" /> Tabla General de Bolas
-              </h3>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                Cantadas: <strong>{drawnNumbers.length}/75</strong>
-              </span>
-            </div>
-
-            <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '0.5rem', fontStyle: 'italic' }}>
-              Haz clic en un número para cantarlo
-            </p>
-
-            {/* Última balota cantada */}
-            {lastDrawn && (() => {
-              const letter = getBallLetter(lastDrawn);
-              const { bg, shadow } = getBallColor(letter);
-              return (
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.6rem' }}>
-                  <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: bg, boxShadow: `0 0 20px ${shadow}88`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', animation: 'ballPop 0.4s ease' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'rgba(255,255,255,0.85)', lineHeight: 1 }}>{letter}</span>
-                    <span style={{ fontSize: '1.8rem', fontWeight: 900, color: 'white', lineHeight: 1 }}>{lastDrawn}</span>
-                  </div>
+              {/* Automatic Draw Controls (Yellow Play / Grey Stop) */}
+              <div style={{
+                background: '#451a03',
+                border: '2px solid #b45309',
+                borderRadius: '8px',
+                padding: '0.6rem 0.75rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.5rem',
+                boxShadow: '0 4px 8px rgba(0,0,0,0.2)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#eedba2', fontWeight: 'bold' }}>MODO AUTOMÁTICO</span>
+                  {isAutoDrawing && <span className="voice-status-dot" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></span>}
                 </div>
-              );
-            })()}
-
-            {/* Grid 1-75 */}
-            <div className="balls-grid">
-              {Array.from({ length: 75 }).map((_, idx) => {
-                const num = idx + 1;
-                const isDrawn = drawnNumbers.includes(num);
-                const isLast  = lastDrawn === num;
-                const { shadow } = getBallColor(getBallLetter(num));
-                return (
-                  <div
-                    key={num}
-                    onClick={() => !isDrawn && drawNumber(num)}
-                    title={isDrawn ? `${getBallLetter(num)}-${num} ya cantada` : `Cantar ${getBallLetter(num)}-${num}`}
-                    className={`ball-indicator ${isDrawn ? 'is-drawn' : ''} ${isLast ? 'last-drawn' : ''}`}
-                    style={{ cursor: isDrawn ? 'not-allowed' : 'pointer', transition: 'all 0.15s ease', boxShadow: isLast ? `0 0 10px ${shadow}` : undefined, transform: isLast ? 'scale(1.15)' : undefined }}
+                
+                <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+                  {/* Yellow Play Button */}
+                  <button
+                    onClick={startAutoDraw}
+                    disabled={isAutoDrawing}
+                    style={{
+                      flex: 1,
+                      height: '42px',
+                      background: isAutoDrawing ? '#451a03' : '#eedba2',
+                      border: '3px solid #78350f',
+                      borderRadius: '8px',
+                      color: isAutoDrawing ? 'rgba(0,0,0,0.25)' : '#78350f',
+                      fontSize: '1.25rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: isAutoDrawing ? 'not-allowed' : 'pointer',
+                      boxShadow: isAutoDrawing ? 'none' : '0 3px 6px rgba(0,0,0,0.3)',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseOver={(e) => {
+                      if (!isAutoDrawing) {
+                        e.currentTarget.style.background = '#fcf0d3';
+                        e.currentTarget.style.transform = 'scale(1.03)';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (!isAutoDrawing) {
+                        e.currentTarget.style.background = '#eedba2';
+                        e.currentTarget.style.transform = 'scale(1)';
+                      }
+                    }}
+                    title="Iniciar Extracción Automática"
                   >
-                    {num}
-                  </div>
-                );
-              })}
+                    ▶
+                  </button>
+
+                  {/* Grey Stop Button */}
+                  <button
+                    onClick={stopAutoDraw}
+                    disabled={!isAutoDrawing}
+                    style={{
+                      flex: 1,
+                      height: '42px',
+                      background: !isAutoDrawing ? '#451a03' : '#9ea3a8',
+                      border: '3px solid #374151',
+                      borderRadius: '8px',
+                      color: !isAutoDrawing ? 'rgba(255,255,255,0.15)' : '#1f2937',
+                      fontSize: '1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: !isAutoDrawing ? 'not-allowed' : 'pointer',
+                      boxShadow: !isAutoDrawing ? 'none' : '0 3px 6px rgba(0,0,0,0.3)',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseOver={(e) => {
+                      if (isAutoDrawing) {
+                        e.currentTarget.style.background = '#bdc3c7';
+                        e.currentTarget.style.transform = 'scale(1.03)';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (isAutoDrawing) {
+                        e.currentTarget.style.background = '#9ea3a8';
+                        e.currentTarget.style.transform = 'scale(1)';
+                      }
+                    }}
+                    title="Pausar Extracción"
+                  >
+                    ■
+                  </button>
+                </div>
+
+                {/* Speed selector */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.2rem' }}>
+                  <span style={{ fontSize: '0.62rem', color: '#eedba2' }}>Velocidad:</span>
+                  <select
+                    value={autoDrawSpeed}
+                    onChange={(e) => {
+                      const newSpeed = Number(e.target.value);
+                      setAutoDrawSpeed(newSpeed);
+                      if (isAutoDrawing) {
+                        // Restart auto draw with new speed
+                        stopAutoDraw();
+                        setIsAutoDrawing(true);
+                        autoDrawIntervalRef.current = setInterval(() => {
+                          drawNumber().then(res => {
+                            if (res === null) stopAutoDraw();
+                          });
+                        }, newSpeed * 1000);
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '0.15rem 0.3rem',
+                      fontSize: '0.65rem',
+                      borderRadius: '4px',
+                      background: 'rgba(0,0,0,0.4)',
+                      border: '1px solid #b45309',
+                      color: '#eedba2',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value={4}>Rápido (4s)</option>
+                    <option value={6}>Normal (6s)</option>
+                    <option value={8}>Medio (8s)</option>
+                    <option value={10}>Lento (10s)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Voice Live / Directo de Voz and Reset buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: 'auto' }}>
+                
+                {/* Voice Direct Controller */}
+                {isStreaming ? (
+                  <button 
+                    className="btn-secondary" 
+                    onClick={handleStopStream} 
+                    style={{
+                      padding: '0.45rem',
+                      fontSize: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.3rem',
+                      borderColor: 'var(--danger)',
+                      color: 'var(--danger)',
+                      background: 'rgba(239, 68, 68, 0.05)',
+                      borderRadius: '8px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    <VideoOff size={12} /> Detener Directo de Voz
+                  </button>
+                ) : (
+                  <button 
+                    className="btn-primary" 
+                    onClick={handleStartStream} 
+                    style={{
+                      padding: '0.45rem',
+                      fontSize: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.3rem',
+                      borderRadius: '8px',
+                      fontWeight: 'bold',
+                      background: 'var(--accent-violet)',
+                      color: 'white',
+                      border: 'none'
+                    }}
+                  >
+                    <Video size={12} /> Iniciar Directo de Voz
+                  </button>
+                )}
+
+                <button 
+                  className="btn-secondary" 
+                  onClick={handleReset} 
+                  style={{
+                    padding: '0.4rem',
+                    fontSize: '0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.3rem',
+                    borderRadius: '8px',
+                    borderColor: 'rgba(255,255,255,0.15)',
+                    color: 'white'
+                  }}
+                >
+                  <RotateCcw size={12} /> Reiniciar Partida
+                </button>
+              </div>
+
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.75rem' }}>
-              <button className="btn-secondary" onClick={resetGame} style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                <RotateCcw size={12} /> Reiniciar Partida
-              </button>
+            {/* Right Tablero Panel (The 75-Ball Grid) */}
+            <div style={{
+              flex: '2 1 340px',
+              background: '#eedba2',
+              borderRadius: '12px',
+              border: '3px solid #b45309',
+              padding: '0.6rem 0.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.4rem',
+              boxShadow: 'inset 0 4px 8px rgba(0,0,0,0.15)'
+            }}>
+              
+              {/* B-I-N-G-O Columns Headers */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 1fr)',
+                gap: '0.35rem',
+                justifyItems: 'stretch'
+              }}>
+                {[
+                  { letter: 'B', color: '#0088cc' },
+                  { letter: 'I', color: '#ef4444' },
+                  { letter: 'N', color: '#78716c' },
+                  { letter: 'G', color: '#22c55e' },
+                  { letter: 'O', color: '#eab308' }
+                ].map(col => (
+                  <div
+                    key={col.letter}
+                    style={{
+                      background: col.color,
+                      borderRadius: '6px',
+                      padding: '0.3rem',
+                      textAlign: 'center',
+                      color: 'white',
+                      fontWeight: 900,
+                      fontSize: '1rem',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                      textShadow: '1px 1px 1px rgba(0,0,0,0.4)'
+                    }}
+                  >
+                    {col.letter}
+                  </div>
+                ))}
+              </div>
+
+              {/* 15 rows of 5 columns */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 1fr)',
+                gap: '0.35rem',
+                justifyItems: 'center'
+              }}>
+                {Array.from({ length: 15 }).map((_, rIdx) => {
+                  return [0, 1, 2, 3, 4].map(cIdx => {
+                    const num = cIdx * 15 + rIdx + 1;
+                    const letter = getBallLetter(num);
+                    const colConfig = getBallColor(letter);
+                    const isDrawn = drawnNumbers.includes(num);
+                    const isLast = lastDrawn === num;
+                    
+                    return (
+                      <div
+                        key={num}
+                        onClick={() => !isDrawn && drawNumber(num)}
+                        title={isDrawn ? `${letter}-${num} ya cantada` : `Cantar ${letter}-${num}`}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          border: `2px solid ${colConfig.color}`,
+                          background: isDrawn ? colConfig.bg : 'white',
+                          color: isDrawn ? 'white' : colConfig.color,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 900,
+                          fontSize: '0.85rem',
+                          cursor: isDrawn ? 'not-allowed' : 'pointer',
+                          boxShadow: isLast 
+                            ? `0 0 12px ${colConfig.shadow}, inset 0 0 4px rgba(255,255,255,0.6)` 
+                            : isDrawn 
+                            ? 'none' 
+                            : 'inset 0 1px 3px rgba(0,0,0,0.1)',
+                          transform: isLast ? 'scale(1.18)' : 'scale(1)',
+                          animation: isLast ? 'ringPulse 1.5s infinite' : 'none',
+                          zIndex: isLast ? 10 : 1,
+                          transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                        }}
+                        onMouseOver={(e) => {
+                          if (!isDrawn) {
+                            e.currentTarget.style.transform = 'scale(1.15)';
+                            e.currentTarget.style.background = '#fcfcfc';
+                          }
+                        }}
+                        onMouseOut={(e) => {
+                          if (!isDrawn) {
+                            e.currentTarget.style.transform = 'scale(1)';
+                            e.currentTarget.style.background = 'white';
+                          }
+                        }}
+                      >
+                        {num}
+                      </div>
+                    );
+                  });
+                })}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.2rem 0.5rem', background: 'rgba(0,0,0,0.04)', borderRadius: '6px', fontSize: '0.68rem', color: '#78350f', fontWeight: 'bold' }}>
+                <span>Modo de juego: <span style={{ textTransform: 'uppercase', color: '#991b1b' }}>{gameConfig.winningMechanic === 'full' ? 'Cartón Lleno' : gameConfig.winningMechanic === 'terna' ? 'Terna' : gameConfig.winningMechanic === 'cajon' ? 'Cajón' : 'Línea Horizontal'}</span></span>
+                <span>Cantadas: {drawnNumbers.length}/75</span>
+              </div>
+
             </div>
+
           </div>
+
         </div>
 
         {/* ══ RIGHT COLUMN ══ */}
@@ -1063,7 +1161,7 @@ export const HostView: React.FC = () => {
                   onChange={(e) => updateGameConfig({ winningMechanic: e.target.value as any })}
                   style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '0.75rem', padding: '0.3rem 0.5rem', color: 'white', outline: 'none', width: '100%', cursor: 'pointer' }}
                 >
-                  <option value="line">Línea (Horiz/Vert/Diag)</option>
+                  <option value="line">Línea Horizontal (5 números)</option>
                   <option value="full">Cartón Lleno (24 celdas)</option>
                   <option value="cajon">Cajón (Marco Exterior)</option>
                   <option value="terna">Terna (Horizontal &gt;= 3)</option>

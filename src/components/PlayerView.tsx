@@ -3,7 +3,7 @@ import { useBingo } from '../context/BingoContext';
 import { 
   Tv, CreditCard, 
   Award, Sparkles, User, ShoppingBag, Plus, Minus,
-  Volume2, VolumeX
+  Volume2, VolumeX, RotateCcw
 } from 'lucide-react';
 
 const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
@@ -34,8 +34,7 @@ export const PlayerView: React.FC = () => {
     submitClaim,
     pendingClaims,
     submitPayoutDetails,
-    sendPayoutChatMessage,
-    streamFrame
+    sendPayoutChatMessage
   } = useBingo();
 
   const winningCard = playerCards.find(c => c.isWinner);
@@ -350,12 +349,12 @@ export const PlayerView: React.FC = () => {
 
   const getBallColor = (letter: string) => {
     switch (letter) {
-      case 'B': return { bg: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', shadow: '#3b82f6' };
-      case 'I': return { bg: 'linear-gradient(135deg,#f59e0b,#d97706)', shadow: '#f59e0b' };
-      case 'N': return { bg: 'linear-gradient(135deg,#10b981,#059669)', shadow: '#10b981' };
-      case 'G': return { bg: 'linear-gradient(135deg,#ec4899,#be185d)', shadow: '#ec4899' };
-      case 'O': return { bg: 'linear-gradient(135deg,#f97316,#c2410c)', shadow: '#f97316' };
-      default:  return { bg: 'linear-gradient(135deg,#6b7280,#374151)', shadow: '#6b7280' };
+      case 'B': return { bg: 'linear-gradient(135deg, #00b0ff, #0088cc)', shadow: '#00b0ff', color: '#0088cc' };
+      case 'I': return { bg: 'linear-gradient(135deg, #ff4d4d, #ef4444)', shadow: '#ef4444', color: '#ef4444' };
+      case 'N': return { bg: 'linear-gradient(135deg, #a8a29e, #78716c)', shadow: '#78716c', color: '#78716c' };
+      case 'G': return { bg: 'linear-gradient(135deg, #4ade80, #22c55e)', shadow: '#22c55e', color: '#22c55e' };
+      case 'O': return { bg: 'linear-gradient(135deg, #facc15, #eab308)', shadow: '#eab308', color: '#eab308' };
+      default:  return { bg: 'linear-gradient(135deg, #6b7280, #374151)', shadow: '#6b7280', color: '#6b7280' };
     }
   };
 
@@ -508,7 +507,7 @@ export const PlayerView: React.FC = () => {
             {gameConfig.winningMechanic === 'full' ? 'Cartón Lleno (24 celdas)' :
              gameConfig.winningMechanic === 'cajon' ? 'Cajón (Marco Exterior)' :
              gameConfig.winningMechanic === 'terna' ? 'Terna (Horizontal >= 3)' :
-             'Línea (Horiz/Vert/Diag)'}
+             'Línea Horizontal'}
           </strong>
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)' }}>
@@ -754,18 +753,273 @@ export const PlayerView: React.FC = () => {
               </div>
             </div>
 
-            <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', background: '#000', aspectRatio: '16/9' }}>
-              {isStreaming && streamFrame
-                ? <img src={streamFrame} alt="Transmisión del Administrador" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                : <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'linear-gradient(135deg,#0d0a1f,#050311)', minHeight: '120px', aspectRatio: '16/9' }}>
-                    <Tv size={28} style={{ color: 'rgba(255,255,255,0.2)', animation: isStreaming ? 'pulse 2s infinite' : 'none' }} />
-                    <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>
-                      {isStreaming ? 'Conectando con la transmisión...' : 'Esperando al administrador de sala para iniciar el directo...'}
-                    </span>
-                  </div>
-              }
+            <div style={{
+              background: '#f3e8c9',
+              borderRadius: '16px',
+              border: '4px solid #b45309',
+              padding: '1rem',
+              display: 'flex',
+              flexDirection: 'row',
+              gap: '1rem',
+              boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+              flexWrap: 'wrap', // Wrap on mobile
+              position: 'relative'
+            }}>
+              
+              {/* Left Control/Display Panel (Retro style red containers) */}
+              <div style={{
+                flex: '1 1 240px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.8rem',
+                alignItems: 'stretch'
+              }}>
+                
+                {/* Banner Container */}
+                <div style={{
+                  background: '#991b1b',
+                  border: '2px solid #b45309',
+                  borderRadius: '8px',
+                  padding: '0.6rem 0.5rem',
+                  textAlign: 'center',
+                  boxShadow: '0 4px 8px rgba(0,0,0,0.3)'
+                }}>
+                  <h2 style={{
+                    margin: 0,
+                    fontSize: '1.6rem',
+                    fontWeight: 'bold',
+                    color: '#facc15',
+                    textShadow: '2px 2px 0px #7f1d1d',
+                    fontFamily: '"Outfit", sans-serif',
+                    letterSpacing: '1px'
+                  }}>
+                    {gameConfig.gameName.toUpperCase() !== 'BINGO-KNO' ? gameConfig.gameName.toUpperCase() : 'BINGO 75'}
+                  </h2>
+                </div>
 
-              {/* ── Animated Ball Overlay inside the live viewport ── */}
+                {/* Extraction Display (Pantalla de Balota Actual) */}
+                <div style={{
+                  background: '#7f1d1d',
+                  border: '3px solid #b45309',
+                  borderRadius: '10px',
+                  padding: '1rem',
+                  minHeight: '140px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.5), 0 4px 8px rgba(0,0,0,0.3)',
+                  position: 'relative'
+                }}>
+                  {lastDrawn ? (() => {
+                    const letter = getBallLetter(lastDrawn);
+                    const colConfig = getBallColor(letter);
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                        <span style={{ fontSize: '0.72rem', color: '#facc15', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Última Balota</span>
+                        <div style={{
+                          width: '82px',
+                          height: '82px',
+                          borderRadius: '50%',
+                          background: colConfig.bg,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: `0 8px 20px rgba(0,0,0,0.6), inset -8px -8px 16px rgba(0,0,0,0.4), inset 8px 8px 16px rgba(255,255,255,0.4), 0 0 15px ${colConfig.shadow}`,
+                          animation: 'ballPopBig 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                          border: '2px solid rgba(255,255,255,0.35)'
+                        }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 900, color: 'rgba(255,255,255,0.85)', lineHeight: 1, textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>{letter}</span>
+                          <span style={{ fontSize: '2.1rem', fontWeight: 950, color: 'white', lineHeight: 1, textShadow: '2px 2px 4px rgba(0,0,0,0.6)' }}>{lastDrawn}</span>
+                        </div>
+                      </div>
+                    );
+                  })() : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', opacity: 0.8 }}>
+                      <RotateCcw size={28} style={{ color: '#eedba2', animation: 'spin 8s linear infinite' }} />
+                      <span style={{ fontSize: '0.7rem', color: '#eedba2', fontWeight: 'bold', letterSpacing: '0.5px' }}>ESPERANDO BALOTA...</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Voice Direct Controller & audio activation button */}
+                <div style={{
+                  background: '#451a03',
+                  border: '2px solid #b45309',
+                  borderRadius: '8px',
+                  padding: '0.5rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.4rem',
+                  boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
+                  alignItems: 'stretch',
+                  marginTop: 'auto'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.68rem', color: '#eedba2', fontWeight: 'bold' }}>LIVE AUDIO DIRECTO</span>
+                    {isStreaming && <span className="voice-status-dot" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></span>}
+                  </div>
+                  
+                  {isStreaming ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      {!audioUnlocked ? (
+                        <button
+                          onClick={() => unlockAudio()}
+                          style={{
+                            background: 'linear-gradient(135deg, #eedba2, #d5c38c)',
+                            border: '2px solid #78350f',
+                            borderRadius: '6px',
+                            color: '#78350f',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '0.35rem 0.5rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            gap: '0.25rem',
+                            animation: 'pulse 2s infinite',
+                            outline: 'none',
+                            width: '100%'
+                          }}
+                        >
+                          🔊 Activar Audio
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setIsMuted(!isMuted)}
+                          style={{
+                            background: isMuted ? 'rgba(0,0,0,0.3)' : 'rgba(16,185,129,0.15)',
+                            border: isMuted ? '1px solid #78350f' : '1px solid #10b981',
+                            borderRadius: '6px',
+                            color: isMuted ? '#eedba2' : '#34d399',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '0.35rem 0.5rem',
+                            fontSize: '0.7rem',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            width: '100%'
+                          }}
+                        >
+                          {isMuted ? '🔈 Audio Desactivado' : '🔊 Escuchando En Vivo'}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.65rem', color: '#eedba2', opacity: 0.75, textAlign: 'center', fontStyle: 'italic', padding: '0.2rem' }}>
+                      El organizador no está transmitiendo audio en vivo
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Right Tablero Panel (The 75-Ball Grid) */}
+              <div style={{
+                flex: '2 1 340px',
+                background: '#eedba2',
+                borderRadius: '12px',
+                border: '3px solid #b45309',
+                padding: '0.6rem 0.5rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                boxShadow: 'inset 0 4px 8px rgba(0,0,0,0.15)'
+              }}>
+                
+                {/* B-I-N-G-O Columns Headers */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(5, 1fr)',
+                  gap: '0.35rem',
+                  justifyItems: 'stretch'
+                }}>
+                  {[
+                    { letter: 'B', color: '#0088cc' },
+                    { letter: 'I', color: '#ef4444' },
+                    { letter: 'N', color: '#78716c' },
+                    { letter: 'G', color: '#22c55e' },
+                    { letter: 'O', color: '#eab308' }
+                  ].map(col => (
+                    <div
+                      key={col.letter}
+                      style={{
+                        background: col.color,
+                        borderRadius: '6px',
+                        padding: '0.3rem',
+                        textAlign: 'center',
+                        color: 'white',
+                        fontWeight: 900,
+                        fontSize: '1rem',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                        textShadow: '1px 1px 1px rgba(0,0,0,0.4)'
+                      }}
+                    >
+                      {col.letter}
+                    </div>
+                  ))}
+                </div>
+
+                {/* 15 rows of 5 columns */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(5, 1fr)',
+                  gap: '0.35rem',
+                  justifyItems: 'center'
+                }}>
+                  {Array.from({ length: 15 }).map((_, rIdx) => {
+                    return [0, 1, 2, 3, 4].map(cIdx => {
+                      const num = cIdx * 15 + rIdx + 1;
+                      const letter = getBallLetter(num);
+                      const colConfig = getBallColor(letter);
+                      const isDrawn = drawnNumbers.includes(num);
+                      const isLast = lastDrawn === num;
+                      
+                      return (
+                        <div
+                          key={num}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '50%',
+                            border: `2px solid ${colConfig.color}`,
+                            background: isDrawn ? colConfig.bg : 'white',
+                            color: isDrawn ? 'white' : colConfig.color,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 900,
+                            fontSize: '0.85rem',
+                            boxShadow: isLast 
+                              ? `0 0 12px ${colConfig.shadow}, inset 0 0 4px rgba(255,255,255,0.6)` 
+                              : isDrawn 
+                              ? 'none' 
+                              : 'inset 0 1px 3px rgba(0,0,0,0.1)',
+                            transform: isLast ? 'scale(1.18)' : 'scale(1)',
+                            animation: isLast ? 'ringPulse 1.5s infinite' : 'none',
+                            zIndex: isLast ? 10 : 1,
+                            transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                          }}
+                        >
+                          {num}
+                        </div>
+                      );
+                    });
+                  })}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.2rem 0.5rem', background: 'rgba(0,0,0,0.04)', borderRadius: '6px', fontSize: '0.68rem', color: '#78350f', fontWeight: 'bold' }}>
+                  <span>Modo de juego: <span style={{ textTransform: 'uppercase', color: '#991b1b' }}>{gameConfig.winningMechanic === 'full' ? 'Cartón Lleno' : gameConfig.winningMechanic === 'terna' ? 'Terna' : gameConfig.winningMechanic === 'cajon' ? 'Cajón' : 'Línea Horizontal'}</span></span>
+                  <span>Cantadas: {drawnNumbers.length}/75</span>
+                </div>
+
+              </div>
+
+              {/* ── Animated Ball Overlay inside the digital viewport ── */}
               {showBallAnim && animatedBall !== null && (() => {
                 const letter = getBallLetter(animatedBall);
                 const { bg, shadow } = getBallColor(letter);
@@ -775,7 +1029,8 @@ export const PlayerView: React.FC = () => {
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)',
                     animation: 'fadeInOverlay 0.3s ease',
-                    pointerEvents: 'none'
+                    pointerEvents: 'none',
+                    borderRadius: '16px'
                   }}>
                     <div style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem',
@@ -787,78 +1042,47 @@ export const PlayerView: React.FC = () => {
                         <div style={{ position: 'absolute', width: '105px', height: '105px', borderRadius: '50%', background: `${shadow}33`, animation: 'ringPulse 1s ease 0.15s infinite' }} />
                         {/* Ball */}
                         <div style={{
-                          width: '80px', height: '80px', borderRadius: '50%',
+                          width: '85px', height: '85px', borderRadius: '50%',
                           background: bg,
                           boxShadow: `0 0 35px ${shadow}bb, 0 0 70px ${shadow}55`,
                           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                          position: 'relative'
+                          position: 'relative',
+                          border: '2px solid rgba(255,255,255,0.45)'
                         }}>
                           {/* Highlight */}
                           <div style={{ position: 'absolute', top: '8px', left: '14px', width: '20px', height: '12px', borderRadius: '50%', background: 'rgba(255,255,255,0.35)', transform: 'rotate(-30deg)' }} />
                           <span style={{ fontSize: '0.8rem', fontWeight: 900, color: 'rgba(255,255,255,0.9)', lineHeight: 1, letterSpacing: '0.5px' }}>{letter}</span>
-                          <span style={{ fontSize: '2.3rem', fontWeight: 900, color: 'white', lineHeight: 1 }}>{animatedBall}</span>
+                          <span style={{ fontSize: '2.4rem', fontWeight: 950, color: 'white', lineHeight: 1 }}>{animatedBall}</span>
                         </div>
                       </div>
                       <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'white', letterSpacing: '1px', textShadow: `0 0 10px ${shadow}` }}>¡{letter} - {animatedBall}!</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 950, color: 'white', letterSpacing: '1px', textShadow: `0 0 10px ${shadow}` }}>¡{letter} - {animatedBall}!</div>
                       </div>
                     </div>
                   </div>
                 );
               })()}
-            </div>
-          </div>
 
-          {/* A. Balota actual del administrador */}
-          <div className="panel-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0.75rem' }}>
-            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 className="panel-title" style={{ fontSize: '1rem' }}>
-                <Sparkles size={16} className="text-amber-400" />
-                Balota Actual
-              </h3>
-              {drawnNumbers.length > 0 && <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Cantadas: <strong>{drawnNumbers.length}/75</strong></span>}
+              {/* Waiting overlay if streaming not active */}
+              {!isStreaming && (
+                <div style={{
+                  position: 'absolute', inset: 0, zIndex: 5,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  background: 'rgba(18,20,32,0.65)', backdropFilter: 'blur(6px)',
+                  borderRadius: '16px',
+                  color: 'white',
+                  textAlign: 'center',
+                  padding: '1.5rem',
+                  animation: 'fadeInOverlay 0.25s ease'
+                }}>
+                  <Tv size={42} style={{ color: '#eedba2', marginBottom: '0.75rem', animation: 'pulse 2.5s infinite' }} />
+                  <h4 style={{ fontSize: '1rem', fontWeight: 'bold', color: '#eedba2', margin: '0 0 0.5rem 0' }}>SALA EN ESPERA</h4>
+                  <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', maxWidth: '280px', margin: 0 }}>
+                    El organizador aún no ha iniciado el directo. Los números aparecerán aquí en vivo cuando comience la partida.
+                  </p>
+                </div>
+              )}
             </div>
-
-            {lastDrawn ? (() => {
-              const letter = getBallLetter(lastDrawn);
-              const { bg, shadow } = getBallColor(letter);
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0' }}>
-                  <div style={{
-                    width: '90px', height: '90px', borderRadius: '50%',
-                    background: bg, boxShadow: `0 0 28px ${shadow}88`,
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    animation: 'ballPop 0.4s ease'
-                  }}>
-                    <span style={{ fontSize: '1rem', fontWeight: 900, color: 'rgba(255,255,255,0.85)', lineHeight: 1 }}>{letter}</span>
-                    <span style={{ fontSize: '2.5rem', fontWeight: 900, color: 'white', lineHeight: 1 }}>{lastDrawn}</span>
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Última balota cantada</div>
-                  {/* Últimas 5 balotas */}
-                  {drawnNumbers.length > 1 && (
-                    <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                      {[...drawnNumbers].slice(-5).reverse().slice(1).map(n => {
-                        const l = getBallLetter(n);
-                        const { bg: bg2 } = getBallColor(l);
-                        return (
-                          <div key={n} style={{ width: '32px', height: '32px', borderRadius: '50%', background: bg2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.7 }}>
-                            <span style={{ fontSize: '0.5rem', color: 'white', fontWeight: 900 }}>{l}</span>
-                            <span style={{ fontSize: '0.75rem', color: 'white', fontWeight: 900, lineHeight: 1 }}>{n}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })() : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', padding: '1rem 0' }}>
-                <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', border: '2px dashed rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ fontSize: '2rem', color: 'rgba(255,255,255,0.2)' }}>?</span>
-                </div>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Esperando al administrador...</span>
-              </div>
-            )}
           </div>
 
           {/* B. Digital Cards */}
