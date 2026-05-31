@@ -58,7 +58,9 @@ export const PlayerView: React.FC = () => {
     return tx ? tx.playerName : null;
   };
 
-  const winningCard = playerCards.find(c => c.isWinner);
+  const [closedOverlayCardIds, setClosedOverlayCardIds] = useState<string[]>([]);
+
+  const winningCard = playerCards.find(c => c.isWinner && !closedOverlayCardIds.includes(c.id));
 
   const [quantity, setQuantity] = useState(1);
   const [selectedLinesForPurchase, setSelectedLinesForPurchase] = useState<number[]>([]);
@@ -1389,7 +1391,7 @@ export const PlayerView: React.FC = () => {
                             </div>
                             <button
                               onClick={() => {
-                                setPlayerCards(prev => prev.map(c => c.id === card.id ? { ...c, isWinner: true } : c));
+                                setClosedOverlayCardIds(prev => prev.filter(id => id !== card.id));
                               }}
                               style={{
                                 marginTop: '0.2rem',
@@ -1597,6 +1599,37 @@ export const PlayerView: React.FC = () => {
               />
             </div>
           </div>
+
+          {/* Play Again (Volver a Jugar) button */}
+          {playerCards.length > 0 && (
+            <button 
+              className="btn-accent" 
+              onClick={() => {
+                if (window.confirm('¿Estás seguro de que quieres volver a jugar? Esto eliminará tus líneas actuales para que puedas comprar nuevas en esta misma sesión.')) {
+                  setPlayerCards([]);
+                  setSelectedLinesForPurchase([]);
+                  setPurchaseTxId(null);
+                  setPurchaseSubmitted(false);
+                  setClosedOverlayCardIds([]);
+                  triggerToast('🔄 Listo. Ahora puedes seleccionar y comprar nuevas líneas.');
+                }
+              }} 
+              style={{ 
+                width: '100%', 
+                padding: '0.5rem 1rem', 
+                fontSize: '0.85rem', 
+                height: '36px', 
+                justifyContent: 'center',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: 'white',
+                border: 'none',
+                boxShadow: '0 2px 6px rgba(16,185,129,0.2)',
+                marginBottom: '0.5rem'
+              }}
+            >
+              🔄 Volver a Jugar
+            </button>
+          )}
 
           {/* Leave game button */}
           <button className="btn-secondary" onClick={leaveGame} style={{ width: '100%', padding: '0.5rem 1rem', fontSize: '0.85rem', height: '36px', justifyContent: 'center' }}>
@@ -2145,8 +2178,8 @@ export const PlayerView: React.FC = () => {
                 <button 
                   className="btn-primary" 
                   onClick={() => {
-                    // Set this card's winner flag to false locally to close the overlay
-                    setPlayerCards(prev => prev.map(c => c.id === winningCard.id ? { ...c, isWinner: false } : c));
+                    // Close the overlay by adding the card ID to closed list without mutating the isWinner state!
+                    setClosedOverlayCardIds(prev => [...prev, winningCard.id]);
                     triggerToast('¡Felicidades por tu victoria! Disfruta de la partida.');
                   }}
                   style={{
@@ -2163,6 +2196,35 @@ export const PlayerView: React.FC = () => {
                   }}
                 >
                   Cerrar Consola
+                </button>
+
+                <button
+                  className="btn-accent"
+                  onClick={() => {
+                    if (window.confirm('¿Quieres volver a jugar? Esto cobrará tus ganancias al finalizar el bingo y te permitirá comprar nuevas líneas ahora.')) {
+                      setPlayerCards([]);
+                      setSelectedLinesForPurchase([]);
+                      setPurchaseTxId(null);
+                      setPurchaseSubmitted(false);
+                      setClosedOverlayCardIds([]);
+                      triggerToast('🔄 Listo. Puedes seleccionar y comprar nuevas líneas para la siguiente ronda.');
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '0.5rem',
+                    fontSize: '0.8rem',
+                    fontWeight: 'bold',
+                    justifyContent: 'center',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'white',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 6px rgba(16,185,129,0.2)'
+                  }}
+                >
+                  🔄 Volver a Jugar
                 </button>
               </div>
             </div>
