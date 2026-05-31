@@ -132,6 +132,7 @@ interface BingoContextType {
   updateGameConfig: (config: Partial<GameConfig>) => void;
   pendingClaims: BingoClaim[];
   submitClaim: (cardId: string, playerName: string) => Promise<void>;
+  submitTernaClaim: (cardId: string, playerName: string) => Promise<void>;
   resolveClaim: (claimId: string, status: 'approved' | 'rejected') => Promise<void>;
   submitPayoutDetails: (claimId: string, details: PayoutDetails) => Promise<void>;
   sendPayoutChatMessage: (claimId: string, text: string, senderName: string) => Promise<void>;
@@ -261,15 +262,22 @@ export const generateLineCard = (lineNumber: number): BingoCard => {
   };
 };
 
+let globalVoiceEnabled = true;
+
 // Text-to-speech helper for live voice announcements
 const speakText = (text: string) => {
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
+  if (!globalVoiceEnabled) return;
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  // Delay slightly so cancel() finishes before the new utterance starts
+  setTimeout(() => {
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'es-LA'; // Latin American Spanish
-    utterance.rate = 0.95; // Slightly slower for clarity
+    utterance.lang = 'es-419'; // Latin American Spanish (valid BCP-47)
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
     window.speechSynthesis.speak(utterance);
-  }
+  }, 120);
 };
 
 // Helper for sound and push notifications
@@ -326,6 +334,9 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [playerCards, setPlayerCards] = useState<BingoCard[]>([]);
   const [pendingTransactions, setPendingTransactions] = useState<YappyTransaction[]>([]);
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
+  useEffect(() => {
+    globalVoiceEnabled = voiceEnabled;
+  }, [voiceEnabled]);
   const [isStreaming, setIsStreamingState] = useState<boolean>(false);
   const [streamFrame, setStreamFrame] = useState<string | null>(null);
   
@@ -1784,9 +1795,73 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, [playerCards, gameConfig, gameId]);
 
+  // Dedicated Terna claim (always available regardless of configured winningMechanic)
+  const submitTernaClaim = useCallback(async (cardId: string, pName: string) => {
+    const card = playerCards.find(c => c.id === cardId);
+    if (!card || !gameId) return;
+
+    // Count how many of the 5 numbers in row 0 (the player's single line) are drawn
+    const lineNumbers = card.matrix[0].filter(v => v !== null) as number[];
+    const drawnInLine = lineNumbers.filter(n => drawnNumbers.includes(n));
+    if (drawnInLine.length < 3) {
+      // Not enough numbers drawn yet – UI should prevent this, but guard here
+      return;
+    }
+
+    const claimId = `terna-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+
+    const { error } = await supabase.from('claims').insert({
+      id: claimId,
+      room_id: gameId,
+      player_name: pName,
+      card_id: card.id,
+      matrix: card.matrix,
+      marked: card.marked,
+      win_type: 'Terna',
+      status: 'pending',
+      payout_status: 'pending'
+    });
+
+    if (error) {
+      console.error('Error submitting terna claim:', error);
+      return;
+    }
+
+    const claim: BingoClaim = {
+      id: claimId,
+      playerName: pName,
+      cardId: card.id,
+      matrix: card.matrix,
+      marked: card.marked,
+      winType: 'Terna',
+      status: 'pending'
+    };
+
+    setPendingClaims(prev => {
+      if (prev.some(c => c.id === claim.id)) return prev;
+      return [...prev, claim];
+    });
+
+    // Announce via TTS to all tabs
+    speakText(`¡Atención! ¡El jugador ${pName} canta TERNA! Repito. ¡${pName} canta TERNA!`);
+
+    // Broadcast so other tabs / players see the announcement
+    bc.postMessage({ type: 'claim-victory', playerName: pName, winType: 'Terna' });
+
+    await supabase.from('chat_messages').insert({
+      id: `sys-terna-${claim.id}`,
+      room_id: gameId,
+      sender: 'Salas de Juegos K-NO',
+      text: `🎯 ¡${pName} cantó TERNA! (${drawnInLine.join(', ')} cantados). Verificación del administrador pendiente.`,
+      is_host: false
+    });
+  }, [playerCards, drawnNumbers, gameId]);
+
+
   const resolveClaim = useCallback(async (claimId: string, status: 'approved' | 'rejected') => {
     const claim = pendingClaimsRef.current.find(c => c.id === claimId);
     if (!claim || !gameId) return;
+
 
     const { error } = await supabase.from('claims').update({
       status: status,
@@ -1979,6 +2054,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updateGameConfig,
       pendingClaims,
       submitClaim,
+      submitTernaClaim,
       resolveClaim,
       submitPayoutDetails,
       sendPayoutChatMessage,

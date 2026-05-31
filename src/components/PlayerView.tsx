@@ -30,8 +30,11 @@ export const PlayerView: React.FC = () => {
     buyCards,
     leaveGame,
     isStreaming,
+    voiceEnabled,
+    setVoiceEnabled,
     gameConfig,
     submitClaim,
+    submitTernaClaim,
     pendingClaims,
     submitPayoutDetails,
     sendPayoutChatMessage
@@ -497,6 +500,25 @@ export const PlayerView: React.FC = () => {
     setPlayerCards(prev => prev.map(c => c.id === cardId ? { ...c, isWinner: true, type: winTypeString as any } : c));
   };
 
+  // Helper: true if >= 3 of the player's 5 line numbers have been drawn
+  const canTerna = (card: { matrix: (number | null)[][] }) => {
+    const lineNums = card.matrix[0].filter(v => v !== null) as number[];
+    return lineNums.filter(n => drawnNumbers.includes(n)).length >= 3;
+  };
+
+  // Helper: true if all 5 line numbers drawn (Bingo)
+  const canBingo = (card: { matrix: (number | null)[][] }) => {
+    const lineNums = card.matrix[0].filter(v => v !== null) as number[];
+    return lineNums.length > 0 && lineNums.every(n => drawnNumbers.includes(n));
+  };
+
+  const handleTernaClaim = (cardId: string) => {
+    submitTernaClaim(cardId, playerName);
+    triggerToast(`🎯 ¡Cantaste TERNA! Tu reclamación fue enviada al administrador para su verificación.`);
+  };
+
+
+
 
 
   return (
@@ -875,6 +897,60 @@ export const PlayerView: React.FC = () => {
                   alignItems: 'stretch',
                   marginTop: 'auto'
                 }}>
+                  {/* Locutor Virtual (TTS Announcer) Section */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.68rem', color: '#eedba2', fontWeight: 'bold' }}>LOCUTOR VIRTUAL</span>
+                    <span className="voice-status-dot" style={{ 
+                      backgroundColor: voiceEnabled ? '#22c55e' : '#9ca3af', 
+                      boxShadow: voiceEnabled ? '0 0 8px #22c55e' : 'none' 
+                    }}></span>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const nextState = !voiceEnabled;
+                      setVoiceEnabled(nextState);
+                      if (nextState) {
+                        try {
+                          window.speechSynthesis.cancel();
+                          setTimeout(() => {
+                            const utterance = new SpeechSynthesisUtterance('Locutor virtual activado');
+                            utterance.lang = 'es-419';
+                            utterance.rate = 0.9;
+                            window.speechSynthesis.speak(utterance);
+                          }, 100);
+                        } catch (e) {
+                          console.warn('SpeechSynthesis warm-up error:', e);
+                        }
+                      } else {
+                        window.speechSynthesis.cancel();
+                      }
+                    }}
+                    style={{
+                      background: voiceEnabled ? 'rgba(16,185,129,0.15)' : 'rgba(0,0,0,0.3)',
+                      border: voiceEnabled ? '1px solid #10b981' : '1px solid #78350f',
+                      borderRadius: '6px',
+                      color: voiceEnabled ? '#34d399' : '#eedba2',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0.35rem 0.5rem',
+                      fontSize: '0.7rem',
+                      fontWeight: 'bold',
+                      outline: 'none',
+                      width: '100%',
+                      gap: '0.3rem'
+                    }}
+                  >
+                    {voiceEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                    {voiceEnabled ? 'Voz del Juego Activa' : 'Voz del Juego Desactivada'}
+                  </button>
+
+                  {/* Visual Separation Divider */}
+                  <div style={{ height: '1px', background: 'rgba(180, 83, 9, 0.3)', margin: '0.2rem 0' }} />
+
+                  {/* Live Audio Streaming Section */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '0.68rem', color: '#eedba2', fontWeight: 'bold' }}>LIVE AUDIO DIRECTO</span>
                     {isStreaming && <span className="voice-status-dot" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></span>}
@@ -1305,21 +1381,61 @@ export const PlayerView: React.FC = () => {
                 <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '1.5rem', justifyContent: 'center' }}>
                   {playerCards.map((card, cardIdx) => {
                     const isCardWinner = card.isWinner;
+                    const hasClaimedTerna = pendingClaims.some(c => c.cardId === card.id && c.winType === 'Terna');
                     return (
                       <div key={card.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: '1 1 300px', maxWidth: '340px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
                             Línea #{cardIdx + 1} <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>({card.id.substr(-6).toUpperCase()})</span>
                           </span>
 
-                          <button 
-                            className="btn-accent" 
-                            onClick={() => handleClaim(card.id)}
-                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px' }}
-                            disabled={drawnNumbers.length === 0}
-                          >
-                            <Award size={12} /> ¡Cantar BINGO!
-                          </button>
+                          <div style={{ display: 'flex', gap: '0.35rem' }}>
+                            <button 
+                              onClick={() => handleTernaClaim(card.id)}
+                              style={{ 
+                                padding: '0.25rem 0.5rem', 
+                                fontSize: '0.7rem', 
+                                borderRadius: '4px',
+                                border: 'none',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                background: hasClaimedTerna 
+                                  ? 'rgba(245, 158, 11, 0.2)' 
+                                  : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                color: hasClaimedTerna ? 'var(--text-muted)' : 'white',
+                                opacity: (!canTerna(card) || hasClaimedTerna || drawnNumbers.length === 0) ? 0.6 : 1,
+                                pointerEvents: (!canTerna(card) || hasClaimedTerna || drawnNumbers.length === 0) ? 'none' : 'auto',
+                                boxShadow: hasClaimedTerna ? 'none' : '0 2px 5px rgba(245, 158, 11, 0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.2rem'
+                              }}
+                            >
+                              <Sparkles size={11} /> Cantar Terna
+                            </button>
+
+                            <button 
+                              onClick={() => handleClaim(card.id)}
+                              style={{ 
+                                padding: '0.25rem 0.5rem', 
+                                fontSize: '0.7rem', 
+                                borderRadius: '4px',
+                                border: 'none',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                background: 'linear-gradient(135deg, #a855f7 0%, #6b21a8 100%)',
+                                color: 'white',
+                                opacity: (!canBingo(card) || drawnNumbers.length === 0) ? 0.6 : 1,
+                                pointerEvents: (!canBingo(card) || drawnNumbers.length === 0) ? 'none' : 'auto',
+                                boxShadow: '0 2px 5px rgba(168, 85, 247, 0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.2rem'
+                              }}
+                            >
+                              <Award size={11} /> Cantar BINGO
+                            </button>
+                          </div>
                         </div>
 
                         {isCardWinner && (
