@@ -443,67 +443,66 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!gameId) return;
 
     const channel = supabase.channel(`room-${gameId}`)
-      // Listen to room updates (e.g. drawn_numbers, game_status, configs)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${gameId}` }, async (payload) => {
         const data = payload.new as any;
-        if (roleRef.current === 'player') {
-          if (data.drawn_numbers) {
-            setDrawnNumbers(prev => {
-              // Only announce if a NEW number was added
-              if (data.drawn_numbers.length > prev.length) {
-                const newNum = data.drawn_numbers[data.drawn_numbers.length - 1];
+        if (data.drawn_numbers) {
+          setDrawnNumbers(prev => {
+            // Only announce if a NEW number was added and role is player
+            if (data.drawn_numbers.length > prev.length) {
+              const newNum = data.drawn_numbers[data.drawn_numbers.length - 1];
+              if (roleRef.current === 'player') {
                 announceNumber(newNum);
-                setLastDrawn(newNum);
               }
-              return data.drawn_numbers;
-            });
-          }
-          if (data.game_status) setGameStatus(data.game_status);
-
-          // Re-fetch full room data from DB to avoid truncated payload (base64 images)
-          // postgres_changes payloads truncate large text fields like custom_logo and qr_code
-          const { data: fullRoom } = await supabase
-            .from('rooms')
-            .select('*')
-            .eq('id', gameIdRef.current)
-            .single();
-          
-          if (fullRoom) {
-            let customLogo = fullRoom.custom_logo || null;
-            let qrCode = fullRoom.qr_code || null;
-            
-            if ((!customLogo || !qrCode) && fullRoom.host_id) {
-              try {
-                const { data: profile } = await supabase
-                  .from('host_profiles')
-                  .select('custom_logo, qr_code')
-                  .eq('id', fullRoom.host_id)
-                  .single();
-                if (profile) {
-                  if (!customLogo) customLogo = profile.custom_logo || null;
-                  if (!qrCode) qrCode = profile.qr_code || null;
-                }
-              } catch (e) {
-                console.error('Error fetching host profile fallback on update:', e);
-              }
+              setLastDrawn(newNum);
             }
+            return data.drawn_numbers;
+          });
+        }
+        if (data.game_status) setGameStatus(data.game_status);
 
-            const { bingoPrize, ternaPrize } = parsePayoutAmount(fullRoom.payout_amount || '');
-
-            setGameConfigState({
-              gameName: fullRoom.game_name || '',
-              cardPrice: fullRoom.card_price !== undefined ? fullRoom.card_price : '',
-              paymentDetails: fullRoom.payment_details || '',
-              winningMechanic: (fullRoom.winning_mechanic || 'full') as any,
-              customLogo,
-              qrCode,
-              payoutAmount: fullRoom.payout_amount || '',
-              startDate: fullRoom.start_date || '',
-              startTime: fullRoom.start_time || '',
-              bingoPrize,
-              ternaPrize
-            });
+        // Re-fetch full room data from DB to avoid truncated payload (base64 images)
+        // postgres_changes payloads truncate large text fields like custom_logo and qr_code
+        const { data: fullRoom } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('id', gameIdRef.current)
+          .single();
+        
+        if (fullRoom) {
+          let customLogo = fullRoom.custom_logo || null;
+          let qrCode = fullRoom.qr_code || null;
+          
+          if ((!customLogo || !qrCode) && fullRoom.host_id) {
+            try {
+              const { data: profile } = await supabase
+                .from('host_profiles')
+                .select('custom_logo, qr_code')
+                .eq('id', fullRoom.host_id)
+                .single();
+              if (profile) {
+                if (!customLogo) customLogo = profile.custom_logo || null;
+                if (!qrCode) qrCode = profile.qr_code || null;
+              }
+            } catch (e) {
+              console.error('Error fetching host profile fallback on update:', e);
+            }
           }
+
+          const { bingoPrize, ternaPrize } = parsePayoutAmount(fullRoom.payout_amount || '');
+
+          setGameConfigState({
+            gameName: fullRoom.game_name || '',
+            cardPrice: fullRoom.card_price !== undefined ? fullRoom.card_price : '',
+            paymentDetails: fullRoom.payment_details || '',
+            winningMechanic: (fullRoom.winning_mechanic || 'full') as any,
+            customLogo,
+            qrCode,
+            payoutAmount: fullRoom.payout_amount || '',
+            startDate: fullRoom.start_date || '',
+            startTime: fullRoom.start_time || '',
+            bingoPrize,
+            ternaPrize
+          });
         }
       })
       // Listen to new chat messages
@@ -1281,24 +1280,25 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const drawNumber = useCallback(async (specificNum?: number) => {
-    if (drawnNumbers.length >= 75 || !gameId) {
-      if (drawnNumbers.length >= 75) setGameStatus('finished');
+    const currentDrawn = drawnNumbersRef.current;
+    if (currentDrawn.length >= 75 || !gameId) {
+      if (currentDrawn.length >= 75) setGameStatus('finished');
       return null;
     }
 
     let num: number;
     if (specificNum !== undefined) {
-      if (drawnNumbers.includes(specificNum) || specificNum < 1 || specificNum > 75) {
+      if (currentDrawn.includes(specificNum) || specificNum < 1 || specificNum > 75) {
         return null;
       }
       num = specificNum;
     } else {
       do {
         num = Math.floor(Math.random() * 75) + 1;
-      } while (drawnNumbers.includes(num));
+      } while (currentDrawn.includes(num));
     }
 
-    const updatedNumbers = [...drawnNumbers, num];
+    const updatedNumbers = [...currentDrawn, num];
     
     const { error } = await supabase.from('rooms').update({
       drawn_numbers: updatedNumbers,
@@ -1328,7 +1328,7 @@ export const BingoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     return num;
-  }, [drawnNumbers, announceNumber, gameId]);
+  }, [announceNumber, gameId]);
 
   const resetGame = useCallback(async () => {
     if (!gameId) return;
