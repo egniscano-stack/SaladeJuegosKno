@@ -66,9 +66,7 @@ export const PlayerView: React.FC = () => {
   const [showQrModal, setShowQrModal] = useState(false);
   const [localMarked, setLocalMarked] = useState<Record<string, boolean[][]>>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  // Animated ball state
-  const [animatedBall, setAnimatedBall] = useState<number | null>(null);
-  const [showBallAnim, setShowBallAnim] = useState(false);
+
 
   // Private payout settlement states
   const [payoutMethod, setPayoutMethod] = useState<'yappy' | 'transfer'>('yappy');
@@ -336,20 +334,7 @@ export const PlayerView: React.FC = () => {
 
   const latestMessage = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
 
-  // Show animated ball every time a new number is drawn
-  useEffect(() => {
-    if (lastDrawn !== null) {
-      setAnimatedBall(lastDrawn);
-      setShowBallAnim(false);
-      // brief delay so re-trigger works even for same-mount
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setShowBallAnim(true));
-      });
-      // hide overlay after 3.5s
-      const t = setTimeout(() => setShowBallAnim(false), 3500);
-      return () => clearTimeout(t);
-    }
-  }, [lastDrawn]);
+
 
   // Sync state request upon mounting PlayerView
   useEffect(() => {
@@ -1154,49 +1139,7 @@ export const PlayerView: React.FC = () => {
 
               </div>
 
-              {/* ── Animated Ball Overlay inside the digital viewport ── */}
-              {showBallAnim && animatedBall !== null && (() => {
-                const letter = getBallLetter(animatedBall);
-                const { bg, shadow } = getBallColor(letter);
-                return (
-                  <div style={{
-                    position: 'absolute', inset: 0, zIndex: 10,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)',
-                    animation: 'fadeInOverlay 0.3s ease',
-                    pointerEvents: 'none',
-                    borderRadius: '16px'
-                  }}>
-                    <div style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem',
-                      animation: 'ballPopBig 0.5s cubic-bezier(0.175,0.885,0.32,1.275)'
-                    }}>
-                      {/* Glow rings */}
-                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <div style={{ position: 'absolute', width: '130px', height: '130px', borderRadius: '50%', background: `${shadow}22`, animation: 'ringPulse 1s ease infinite' }} />
-                        <div style={{ position: 'absolute', width: '105px', height: '105px', borderRadius: '50%', background: `${shadow}33`, animation: 'ringPulse 1s ease 0.15s infinite' }} />
-                        {/* Ball */}
-                        <div style={{
-                          width: '85px', height: '85px', borderRadius: '50%',
-                          background: bg,
-                          boxShadow: `0 0 35px ${shadow}bb, 0 0 70px ${shadow}55`,
-                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                          position: 'relative',
-                          border: '2px solid rgba(255,255,255,0.45)'
-                        }}>
-                          {/* Highlight */}
-                          <div style={{ position: 'absolute', top: '8px', left: '14px', width: '20px', height: '12px', borderRadius: '50%', background: 'rgba(255,255,255,0.35)', transform: 'rotate(-30deg)' }} />
-                          <span style={{ fontSize: '0.8rem', fontWeight: 900, color: 'rgba(255,255,255,0.9)', lineHeight: 1, letterSpacing: '0.5px' }}>{letter}</span>
-                          <span style={{ fontSize: '2.4rem', fontWeight: 950, color: 'white', lineHeight: 1 }}>{animatedBall}</span>
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '1rem', fontWeight: 950, color: 'white', letterSpacing: '1px', textShadow: `0 0 10px ${shadow}` }}>¡{letter} - {animatedBall}!</div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
+
 
               {/* Waiting overlay if streaming not active */}
               {!isStreaming && (
