@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useBingo, parseReceiptData, formatPayoutAmount } from '../context/BingoContext';
 import { 
   Tv, CreditCard, 
-  Award, Sparkles, User, ShoppingBag, Plus, Minus,
+  Award, Sparkles, User, ShoppingBag,
   Volume2, VolumeX, RotateCcw
 } from 'lucide-react';
 
@@ -58,6 +58,7 @@ export const PlayerView: React.FC = () => {
   const winningCard = playerCards.find(c => c.isWinner);
 
   const [quantity, setQuantity] = useState(1);
+  const [selectedLinesForPurchase, setSelectedLinesForPurchase] = useState<number[]>([]);
   const [purchaseTxId, setPurchaseTxId] = useState<string | null>(null);
   const [showQrModal, setShowQrModal] = useState(false);
   const [localMarked, setLocalMarked] = useState<Record<string, boolean[][]>>({});
@@ -1158,35 +1159,144 @@ export const PlayerView: React.FC = () => {
             <div className="panel-body" style={{ overflowY: 'auto', padding: '0.25rem', gap: '1rem' }}>
               {/* Purchase panel if no cards */}
               {playerCards.length === 0 ? (
-                <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '1.5rem 1rem', background: 'rgba(255,255,255,0.01)', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--border-color)', gap: '1rem' }}>
-                  <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(0, 136, 204, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0088cc' }}>
-                    <ShoppingBag size={24} />
+                /* Interactive Line Selection Grid for Player */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', width: '100%', maxWidth: '480px', margin: '0 auto', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '1.25rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'center' }}>
+                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(139, 92, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-purple)' }}>
+                      <ShoppingBag size={20} />
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <h4 style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'white', margin: 0 }}>¡Selecciona tus Líneas!</h4>
+                      <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '0.1rem 0 0 0' }}>
+                        Costo: <strong>${(Number(gameConfig.cardPrice) || 0).toFixed(2)} USD</strong> por cada línea de juego.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 style={{ fontSize: '1rem', fontWeight: 'bold', color: 'white' }}>¡Adquiere tus Líneas!</h4>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: '280px', margin: '0.2rem auto 0 auto' }}>
-                      Cada línea cuesta solo <strong>${(Number(gameConfig.cardPrice) || 0).toFixed(2)} Yappy</strong>. Paga de forma segura.
-                    </p>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', margin: '0.8rem 0' }}>
+                    {Array.from({ length: 15 }).map((_, idx) => {
+                      const lineNum = idx + 1;
+                      const owner = getLineOwner(lineNum);
+                      const pendingOwner = getLinePendingOwner(lineNum);
+                      const isSelected = selectedLinesForPurchase.includes(lineNum);
+                      
+                      let bg = 'rgba(255, 255, 255, 0.03)';
+                      let border = '1px solid rgba(255, 255, 255, 0.08)';
+                      let color = 'white';
+                      let cursor = 'pointer';
+                      let pointerEvents: any = 'auto';
+                      let labelText = `Disponible`;
+
+                      if (owner) {
+                        bg = 'rgba(156, 163, 175, 0.06)';
+                        border = '1px dashed rgba(156, 163, 175, 0.2)';
+                        color = 'var(--text-muted)';
+                        cursor = 'not-allowed';
+                        pointerEvents = 'none';
+                        labelText = `👤 ${owner.split(' ')[0]}`;
+                      } else if (pendingOwner) {
+                        bg = 'rgba(245, 158, 11, 0.05)';
+                        border = '1px dashed rgba(245, 158, 11, 0.25)';
+                        color = '#fbbf24';
+                        cursor = 'not-allowed';
+                        pointerEvents = 'none';
+                        labelText = `⏳ ${pendingOwner.split(' ')[0]}`;
+                      } else if (isSelected) {
+                        bg = 'linear-gradient(135deg, rgba(139,92,246,0.3) 0%, rgba(109,40,217,0.4) 100%)';
+                        border = '2px solid var(--accent-purple)';
+                        color = 'white';
+                        labelText = `Seleccionada`;
+                      }
+
+                      return (
+                        <button
+                          key={lineNum}
+                          onClick={() => {
+                            setSelectedLinesForPurchase(prev => {
+                              if (prev.includes(lineNum)) {
+                                  return prev.filter(l => l !== lineNum);
+                              }
+                              return [...prev, lineNum];
+                            });
+                          }}
+                          style={{
+                            background: bg,
+                            border: border,
+                            borderRadius: '6px',
+                            padding: '0.5rem 0.25rem',
+                            fontSize: '0.72rem',
+                            fontWeight: 'bold',
+                            color: color,
+                            cursor: cursor,
+                            pointerEvents: pointerEvents,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.2rem',
+                            transition: 'all 0.2s',
+                            minHeight: '44px',
+                            boxShadow: isSelected ? '0 0 10px rgba(139,92,246,0.25)' : 'none'
+                          }}
+                          onMouseOver={(e) => {
+                            if (!owner && !pendingOwner && !isSelected) {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+                            }
+                          }}
+                          onMouseOut={(e) => {
+                            if (!owner && !pendingOwner && !isSelected) {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                            }
+                          }}
+                        >
+                          <span>Línea {lineNum}</span>
+                          <span style={{ fontSize: '0.55rem', opacity: 0.85 }}>{labelText}</span>
+                        </button>
+                      );
+                    })}
                   </div>
- 
-                   {/* Counter quantity */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'var(--bg-primary)', padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-                    <button 
-                      onClick={() => setQuantity(prev => Math.max(1, prev - 1))}
-                      style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                    >
-                      <Minus size={14} />
-                    </button>
-                    <span style={{ fontStyle: 'normal', fontWeight: 'bold', fontSize: '1rem', width: '18px', color: 'white' }}>{quantity}</span>
-                    <button 
-                      onClick={() => setQuantity(prev => Math.min(6, prev + 1))}
-                      style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                    >
-                      <Plus size={14} />
-                    </button>
-                  </div>
- 
-                  <button className="btn-accent" onClick={handlePurchase} style={{ width: '100%', maxWidth: '240px', padding: '0.5rem 1rem', fontSize: '0.85rem', background: 'linear-gradient(135deg, #0088cc 0%, #006699 100%)', boxShadow: '0 4px 10px rgba(0, 136, 204, 0.3)' }}>
+
+                  {selectedLinesForPurchase.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'left' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        <span>Líneas Seleccionadas:</span>
+                        <span style={{ color: 'white', fontWeight: 'bold' }}>{selectedLinesForPurchase.join(', ')}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.4rem' }}>
+                        <span>Total a transferir:</span>
+                        <span style={{ color: '#10b981', fontWeight: 900, fontSize: '0.9rem' }}>
+                          ${(selectedLinesForPurchase.length * (Number(gameConfig.cardPrice) || 0)).toFixed(2)} USD
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      Selecciona al menos una línea para continuar...
+                    </div>
+                  )}
+
+                  <button
+                    className="btn-accent"
+                    onClick={() => {
+                      if (selectedLinesForPurchase.length === 0) {
+                        alert('Por favor selecciona al menos una línea antes de proceder al pago.');
+                        return;
+                      }
+                      setQuantity(selectedLinesForPurchase.length);
+                      handlePurchase();
+                    }}
+                    disabled={selectedLinesForPurchase.length === 0}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem 1rem',
+                      fontSize: '0.85rem',
+                      background: 'linear-gradient(135deg, #0088cc 0%, #006699 100%)',
+                      boxShadow: '0 4px 10px rgba(0, 136, 204, 0.3)',
+                      opacity: selectedLinesForPurchase.length === 0 ? 0.5 : 1
+                    }}
+                  >
                     <CreditCard size={14} /> Comprar Líneas con Yappy
                   </button>
                 </div>
@@ -1580,7 +1690,11 @@ export const PlayerView: React.FC = () => {
                           alert('Por favor sube la captura de tu transferencia de pago Yappy.');
                           return;
                         }
-                        const txId = await buyCards(quantity, playerName, purchaseReceipt);
+                        const receiptData = JSON.stringify({
+                          lines: selectedLinesForPurchase,
+                          receipt: purchaseReceipt
+                        });
+                        const txId = await buyCards(selectedLinesForPurchase.length, playerName, receiptData);
                         setPurchaseTxId(txId);
                         setPurchaseSubmitted(true);
                         triggerToast('¡Comprobante de pago enviado al organizador!');

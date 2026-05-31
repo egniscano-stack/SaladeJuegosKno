@@ -93,8 +93,14 @@ export const HostView: React.FC = () => {
   }, []);
 
   const handleOpenAssignModal = (txId: string) => {
+    const tx = pendingTransactions.find(t => t.id === txId);
+    let preselected: number[] = [];
+    if (tx) {
+      const parsed = parseReceiptData(tx.paymentReceipt);
+      preselected = parsed.lines || [];
+    }
     setAssigningTxId(txId);
-    setSelectedLinesForAssign([]);
+    setSelectedLinesForAssign(preselected);
     setShowAssignModal(true);
   };
 
